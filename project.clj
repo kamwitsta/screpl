@@ -1,4 +1,4 @@
-(defproject screpl "0.1.0"    ; also update in cli.clj and in doc files
+(defproject screpl "0.2.0"    ; also update in cli.clj and in doc files
   :description "Replication of sound changes"
   :url "https://github.com/kamwitsta/screpl"
   :license {:name "CC BY-NC-SA 4.0 or later"
@@ -7,7 +7,9 @@
                  [clansi "1.0.0"]
                  [io.github.tonsky/fast-edn "1.1.2"]
                  [metosin/malli "0.17.0"]
-                 [org.babashka/sci "0.9.45"]]
+                 [org.mariadb.jdbc/mariadb-java-client "3.5.3"]
+                 [org.babashka/sci "0.9.45"]
+                 [io.github.camsaul/toucan2 "1.0.565"]] 
   :main ^:skip-aot screpl.main
   :target-path "target/%s"
   :profiles {:dev {:dependencies [[nrepl "1.3.1"]

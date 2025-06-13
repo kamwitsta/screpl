@@ -1,6 +1,14 @@
 # Change Log
 
-## [0.1.1] – 2025-06-07
+## [0.2.0] – 2025-##-##
+### Added
+– loading data from a database:
+    - project.edn -> project.clj
+    - specs
+    - load-project
+    - update docs
+
+## [0.1.0] – 2025-06-07
 Initial release.
 
 <!--

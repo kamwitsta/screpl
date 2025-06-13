@@ -2865,8 +2865,8 @@ net.brehaut.ClojureTools = (function (SH) {
     build_tree: build_tree
   };
 })(SyntaxHighlighter);
-</script><title>screpl -- Marginalia</title></head><body><table><tr><td class="docs"><div class="header"><h1 class="project-name"><a href="https://github.com/kamwitsta/screpl">screpl</a></h1><h2 class="project-version">0.1.0</h2><br /><p>Replication of sound changes</p>
-</div><div class="dependencies"><h3>dependencies</h3><table><tr><td class="dep-name">org.clojure/clojure</td><td class="dotted"><hr /></td><td class="dep-version">1.12.0</td></tr><tr><td class="dep-name">clansi</td><td class="dotted"><hr /></td><td class="dep-version">1.0.0</td></tr><tr><td class="dep-name">io.github.tonsky/fast-edn</td><td class="dotted"><hr /></td><td class="dep-version">1.1.2</td></tr><tr><td class="dep-name">metosin/malli</td><td class="dotted"><hr /></td><td class="dep-version">0.17.0</td></tr><tr><td class="dep-name">org.babashka/sci</td><td class="dotted"><hr /></td><td class="dep-version">0.9.45</td></tr></table></div></td><td class="codes" style="text-align: center; vertical-align: middle;color: #666;padding-right:20px"><br /><br /><br />(this space intentionally left almost blank)</td></tr><tr><td class="docs"><div class="toc"><a name="toc"><h3>namespaces</h3></a><ul><li><a href="#screpl.cli">screpl.cli</a></li><li><a href="#screpl.core">screpl.core</a></li><li><a href="#screpl.main">screpl.main</a></li></ul></div></td><td class="codes">&nbsp;</td></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#screpl.cli" name="screpl.cli"><h1 class="project-name">screpl.cli</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>A REPL-based user interface.</p>
+</script><title>screpl -- Marginalia</title></head><body><table><tr><td class="docs"><div class="header"><h1 class="project-name"><a href="https://github.com/kamwitsta/screpl">screpl</a></h1><h2 class="project-version">0.2.0</h2><br /><p>Replication of sound changes</p>
+</div><div class="dependencies"><h3>dependencies</h3><table><tr><td class="dep-name">org.clojure/clojure</td><td class="dotted"><hr /></td><td class="dep-version">1.12.0</td></tr><tr><td class="dep-name">clansi</td><td class="dotted"><hr /></td><td class="dep-version">1.0.0</td></tr><tr><td class="dep-name">io.github.tonsky/fast-edn</td><td class="dotted"><hr /></td><td class="dep-version">1.1.2</td></tr><tr><td class="dep-name">metosin/malli</td><td class="dotted"><hr /></td><td class="dep-version">0.17.0</td></tr><tr><td class="dep-name">org.babashka/sci</td><td class="dotted"><hr /></td><td class="dep-version">0.9.45</td></tr><tr><td class="dep-name">io.github.camsaul/toucan2</td><td class="dotted"><hr /></td><td class="dep-version">1.0.565</td></tr></table></div></td><td class="codes" style="text-align: center; vertical-align: middle;color: #666;padding-right:20px"><br /><br /><br />(this space intentionally left almost blank)</td></tr><tr><td class="docs"><div class="toc"><a name="toc"><h3>namespaces</h3></a><ul><li><a href="#screpl.cli">screpl.cli</a></li><li><a href="#screpl.core">screpl.core</a></li><li><a href="#screpl.main">screpl.main</a></li></ul></div></td><td class="codes">&nbsp;</td></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#screpl.cli" name="screpl.cli"><h1 class="project-name">screpl.cli</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>A REPL-based user interface.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Exposes to the user functions from <a href="#screpl.core">screpl.core</a>.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><ol>
 <li><a href="#cli/globals">Global variables</a></li>
@@ -2938,7 +2938,7 @@ net.brehaut.ClojureTools = (function (SH) {
     (if (and (= where :target-data)
              (nil? (:target-data @*project*)))
       (message :error (ex-info &quot;The current project does not have target data.&quot; {}))
-      ; everyhting fine
+      ; everything fine
       (let [result  (filter #(= (% key) value) (@*project* where))]
         (condp = (count result)
           0  (message :error (ex-info &quot;None found.&quot; {}))
@@ -2992,7 +2992,7 @@ net.brehaut.ClojureTools = (function (SH) {
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Run a REPL as the single point of entry in the interface.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn start-repl
   []
-  (println &quot;\nSCRepl 0.1.0&quot;)
+  (println &quot;\nSCRepl 0.2.0&quot;)
   (println &quot;Type :quit or press ctrl-d to exit.\n&quot;)
   (loop []
     (print &quot;=&gt; &quot;)
@@ -3019,52 +3019,56 @@ net.brehaut.ClojureTools = (function (SH) {
 </td><td class="codes"><pre class="brush: clojure">(defn count-tree
   [tree]
   ; make sure object is a tree
-  (when (not= (type tree) screpl.core.Tree)
-    (throw (ex-info &quot;`tree` must be a Tree, as produced by `grow-tree`.&quot; {})))
-  ; do the counting
-  (let [result (core/count-tree tree progressbar)]
-    (print &quot;\r&quot;)      ; core/count-tree has a progress bar
-    (message :info
-             &quot;A tree from \&quot;&quot; (-&gt; ((:tree-fn tree)) first :display) &quot;\&quot; with &quot;
-             (format &quot;%,d&quot; (:nodes result)) &quot; nodes and &quot;
-             (format &quot;%,d&quot; (:leaves result)) &quot; leaves.&quot;)))</pre></td></tr><tr><td class="docs"><p><a id="cli/find-irregulars"></a></p>
+  (if (not= (type tree) screpl.core.Tree)
+    (message :error (ex-info &quot;`tree` must be a Tree, as produced by `grow-tree`.&quot; {}))
+    ; do the counting
+    (let [result (core/count-tree tree progressbar)]
+      (print &quot;\r&quot;)      ; core/count-tree has a progress bar
+      (message :info
+               &quot;A tree from \&quot;&quot; (-&gt; ((:tree-fn tree)) first :display) &quot;\&quot; with &quot;
+               (format &quot;%,d&quot; (:nodes result)) &quot; nodes and &quot;
+               (format &quot;%,d&quot; (:leaves result)) &quot; leaves.&quot;))))</pre></td></tr><tr><td class="docs"><p><a id="cli/find-irregulars"></a></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Wrapper around <code>core/find-irregulars</code>. If <code>keys</code> are not given, <code>:display</code> is used.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn find-irregulars
   ([]
    (find-irregulars [:display]))
   ([keys]
    (if @*project*
-     (core/find-irregulars (-&gt;&gt; @*project* :sound-changes (filter :active) (map :fn))
-                           (-&gt;&gt; @*project* :source-data)
-                           (-&gt;&gt; @*project* :target-data)
-                           keys
-                           progressbar)
+     (let [result (core/find-irregulars (-&gt;&gt; @*project* :sound-changes (filter :active) (map :fn))
+                                      (-&gt;&gt; @*project* :source-data)
+                                      (-&gt;&gt; @*project* :target-data)
+                                      keys
+                                      progressbar)]
+       (print &quot;\r&quot;)        ; core/find-irregulars has a progress bar
+       result)
      (message :error (ex-info &quot;No project has been loaded.&quot; {})))))</pre></td></tr><tr><td class="docs"><p><a id="cli/find-paths"></a></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Wrapper around <code>core/find-paths</code>.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn find-paths
   [tree          ; find in this tree
    re]           ; paths to leaves that match this regexp
   ; check args
-  (when (not= (type tree) screpl.core.Tree)
-    (throw (ex-info &quot;`tree` must be a Tree, as produced by `grow-tree`.&quot; {})))
-  (when (not= (type re) java.util.regex.Pattern)
-    (throw (ex-info &quot;`re` must be a regular expression.&quot; {})))
-  ; do the finding
-  (let [result (core/find-paths tree re progressbar)
-        plural (condp &gt;= (count result)
-                 0  &quot;no paths&quot;
-                 1  &quot;1 path&quot;
-                 (str (count result) &quot; paths&quot;))]
-    (print &quot;\r&quot;)        ; core/find-paths has a progress bar
-    (message :info &quot;Found &quot; plural &quot; from \&quot;&quot; (-&gt; ((:tree-fn tree)) first :display) &quot;\&quot; to \&quot;&quot; re &quot;\&quot;.&quot;)
-    result))</pre></td></tr><tr><td class="docs"><p><a id="cli/grow-tree"></a></p>
+  (if (not= (type tree) screpl.core.Tree)
+    (message :error (ex-info &quot;`tree` must be a Tree, as produced by `grow-tree`.&quot; {}))
+    (if (not= (type re) java.util.regex.Pattern)
+      (message :error (ex-info &quot;`re` must be a regular expression.&quot; {}))
+      ; do the finding
+      (let [result (core/find-paths tree re progressbar)
+            plural (condp &gt;= (count result)
+                     0  &quot;no paths&quot;
+                     1  &quot;1 path&quot;
+                     (str (count result) &quot; paths&quot;))]
+        (print &quot;\r&quot;)        ; core/find-paths has a progress bar
+        (message :info &quot;Found &quot; plural &quot; from \&quot;&quot; (-&gt; ((:tree-fn tree)) first :display) &quot;\&quot; to \&quot;&quot; re &quot;\&quot;.&quot;)
+        result))))</pre></td></tr><tr><td class="docs"><p><a id="cli/grow-tree"></a></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Wrapper around <code>core/grow-tree</code>. The arity 1 version uses all active functions in <em>project</em>, the arity 2 version only the specified ones. Returns a function that grows a tree. See the comments under <code>core/grow-tree</code>.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn grow-tree
   ; arity 1
   ([x]
-   (if @*project*
-     (grow-tree (-&gt;&gt; @*project* :sound-changes (filter :active) (map :fn)) x)
-     (message :error (ex-info &quot;No project has been loaded.&quot; {}))))
+   (if x
+     (if @*project*
+       (grow-tree (-&gt;&gt; @*project* :sound-changes (filter :active) (map :fn)) x)
+       (message :error (ex-info &quot;No project has been loaded.&quot; {})))
+     (message :error (ex-info &quot;No argument given to `grow-tree`.&quot; {}))))
   ; arity 2  
   ([functions
     x]
@@ -3086,12 +3090,12 @@ net.brehaut.ClojureTools = (function (SH) {
   ([x                      ; print this tree
     filename]              ; to this file – or stdout if redirected from arity 2
    ; make sure x is a tree
-   (when (not= (type x) screpl.core.Tree)
-     (throw (ex-info &quot;`tree` must be a Tree, as produced by `grow-tree`.&quot; {})))
-   ; display basic info about the tree (print-tree is also the print method for core/Tree)
-   (message :info
-            &quot;A tree from \&quot;&quot; (-&gt; ((:tree-fn x)) first :display) &quot;\&quot; through &quot;
-            (:fn-count x) &quot; sound changes.&quot;)
+   (if (not= (type x) screpl.core.Tree)
+     (message :error (ex-info &quot;`tree` must be a Tree, as produced by `grow-tree`.&quot; {}))
+     ; display basic info about the tree (print-tree is also the print method for core/Tree)
+     (message :info
+              &quot;A tree from \&quot;&quot; (-&gt; ((:tree-fn x)) first :display) &quot;\&quot; through &quot;
+              (:fn-count x) &quot; sound changes.&quot;))
    ; if small, just print it; otherwise ask
    (when (or (&lt; (:fn-count x) 10)
              (= &quot;y&quot; (message :quest &quot;Do you want to print the entire tree?&quot; [&quot;y&quot; &quot;n&quot;])))
@@ -3225,11 +3229,19 @@ net.brehaut.ClojureTools = (function (SH) {
 </ul>
 </td><td class="codes"></td></tr><tr><td class="docs"><p><a id="core/projectfile"></a></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Spec for the file containing paths to other files in the project.</p>
+
+<p>sdfjsdkl</p>
+
+<p>jdlfjsdl</p>
 </td><td class="codes"><pre class="brush: clojure">(def ProjectFile
-  [:map
-   [:source-data string?]
-   [:data-target {:optional true} string?]
-   [:sound-changes string?]])</pre></td></tr><tr><td class="docs"><p><a id="core/source-target-datum"></a></p>
+  [:or
+    [:map
+     [:sound-changes string?]
+     [:source-data string?]
+     [:data-target {:optional true} string?]]
+    [:map
+     [:sound-changes string?]
+     [:db-config]]])</pre></td></tr><tr><td class="docs"><p><a id="core/source-target-datum"></a></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>This repeats in Source- and TargetDatum</p>
 </td><td class="codes"><pre class="brush: clojure">(def DataId
   [:or int? keyword? string?])</pre></td></tr><tr><td class="docs"><p>A single item in the source data.</p>
@@ -3543,7 +3555,7 @@ net.brehaut.ClojureTools = (function (SH) {
                         (progress!)
                         (when-not (produces-target? functions src (find-trg src) keys nil)
                           src)))
-         (filter some?))))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#screpl.main" name="screpl.main"><h1 class="project-name">screpl.main</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>The entry point to SCRepl.</p>
+         (keep identity))))     ; (filter some?) could realize the entire sequence</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#screpl.main" name="screpl.main"><h1 class="project-name">screpl.main</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>The entry point to SCRepl.</p>
 
 <p>Its only purpose is to start the UI.</p>
 </td><td class="codes"></td></tr><tr><td class="docs">

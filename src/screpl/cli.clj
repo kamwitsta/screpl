@@ -185,7 +185,7 @@
 (defn start-repl
   "Run a REPL as the single point of entry in the interface."
   []
-  (println "\nSCRepl 0.1.0")
+  (println "\nSCRepl 0.2.0")
   (println "Type :quit or press ctrl-d to exit.\n")
 
   (loop []
@@ -310,7 +310,7 @@
   [filename]    ; the file to process
   (let [result (core/load-project *sci-ctx* filename)]
     (reset! *project* (update result :sound-changes
-                              (fn [x] (map #(hash-map :active true :fn %) x))))
+                             (fn [x] (map #(hash-map :active true :fn %) x))))
     (message :ok "Loaded project " filename ".")
     (project-info)))
 
