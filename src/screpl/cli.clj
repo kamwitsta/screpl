@@ -9,7 +9,8 @@
 (ns screpl.cli
   (:require [clojure.math :as math]
             [sci.core :as sci]
-            [screpl.core :as core]))
+            [screpl.core :as core]
+            [toucan2.core :as db]))
 
 
 ; = globals ==================================================================================== {{{ =
@@ -401,7 +402,9 @@
 
 (def ^:dynamic *sci-ctx*
   "Global variable, holds the context for SCI. Must be defined after all the functions it exposes."
-  (sci/init {:namespaces {'user {; project-related
+  (sci/init {:namespaces {'clojure.set (sci/copy-ns clojure.set (sci/create-ns 'clojure.set))
+                          'toucan2.core (sci/copy-ns toucan2.core (sci/create-ns 'toucan2.core))
+                          'user {; project-related
                                  'load-project     load-project
                                  'project-info     project-info
                                  'reload-project   reload-project

@@ -157,16 +157,16 @@
 
 (def ProjectFile
   ;; Spec for the file containing paths to other files in the project.
-  ; [:or
-  ;; Data can either be loaded from files…
-    [:map
-     [:sound-changes string?]
-     [:source-data string?]
-     [:data-target {:optional true} string?]])
-  ;; … or from a database.
-    ; [:map
-     ; [:sound-changes string?]
-     ; [:get-data-fn #'=>GetDataFn]])
+  [:or
+   ;; Data can either be loaded from files…
+   [:map
+    [:sound-changes string?]
+    [:source-data string?]
+    [:data-target {:optional true} string?]]
+   ;; … or from a database.
+   [:map
+    [:sound-changes string?]
+    [:get-data-fn #'=>GetDataFn]]])
 
 ; -------------------------------------------------------------------------------------------- }}} -
 
@@ -179,10 +179,9 @@
 ;; The only function that is exposed via the UI is [load-project](#core/load-project), which calls all the other functions. The reason for this is this: 1) the `:id` key is only required from source data when target data are also present, and can be omitted otherwise; 2) the ID’s in source data must match the ID’s in target data. Validating the former and ensuring the latter can only be done when all the data are loaded together in one go.
 
 ;; - [check-ids](#core/check-ids)
-;; - [validate-clj](#core/validate-clj)
-;; - [validate-edn](#core/validate-edn)
-;; - [load-clj](#core/load-clj)
-;; - [load-edn](#core/load-edn)
+;; - [load-data](#core/load-data)
+;; - [load-scs](#core/load-scs)
+;; - [load-projectfile](#core/load-projectfile)
 ;; - [load-project](#core/load-project)
 
 ; - check-ids -------------------------------------------------------------------------------- {{{ -
@@ -191,126 +190,134 @@
 
 (defn check-ids
   "Makes sure ids in source and target data are present, unique, and matching."
-  [source       ; source data
-   src-path     ; for error reporting purposes
-   target       ; target data
-   trg-path]    ; for error reporting purposes
+  [data]     ; hash-map with `:source-data` and `:target-data`
 
-  (let [src-ids (map :id source)
-        trg-ids (map :id target)]
+  (let [src-ids (->> data :source-data (map :id))
+        trg-ids (->> data :target-data (map :id))]
 
     ; check unique
     (when-let [dups (seq (duplicates src-ids))]
-      (throw (ex-info (str "Duplicate ids: " dups) {:filename src-path})))
+      (throw (ex-info (str "Duplicate ids: " dups) {:filename "source data"})))
     (when-let [dups (seq (duplicates trg-ids))]
-      (throw (ex-info (str "Duplicate ids: " dups) {:filename trg-path})))
+      (throw (ex-info (str "Duplicate ids: " dups) {:filename "target data"})))
 
     ; check missing ids
-    (when-let [miss (->> (map #(when (nil? %1) %2) src-ids (map :display source))
+    (when-let [miss (->> (map #(when (nil? %1) %2) src-ids (->> data :source-data (map :display)))
                          (remove nil?)
                          (seq))]
-      (throw (ex-info (str "Missing ids: " miss) {:filename src-path})))
-    (when-let [miss (->> (map #(when (nil? %1) %2) trg-ids (map :display target))
+      (throw (ex-info (str "Missing ids: " miss) {:filename "source data"})))
+    (when-let [miss (->> (map #(when (nil? %1) %2) trg-ids (->> data :target-data (map :display)))
                          (remove nil?)
                          (seq))]
-      (throw (ex-info (str "Missing ids: " miss) {:filename trg-path})))
+      (throw (ex-info (str "Missing ids: " miss) {:filename "target data"})))
 
     ; check unmatched ids
     (when-let [unm (->> (set/difference (set src-ids) (set trg-ids))
                         (remove nil?)
                         (seq))]
-      (throw (ex-info (str "Unmatched ids: " unm) {:filename src-path})))
+      (throw (ex-info (str "Unmatched ids: " unm) {:filename "source data"})))
     (when-let [unm (->> (set/difference (set trg-ids) (set src-ids))
                         (remove nil?)
                         (seq))]
-      (throw (ex-info (str "Unmatched ids: " unm) {:filename trg-path})))))
+      (throw (ex-info (str "Unmatched ids: " unm) {:filename "target data"})))))
 
 ; -------------------------------------------------------------------------------------------- }}} -
-; - validate-edn ----------------------------------------------------------------------------- {{{ -
+; - load-data -------------------------------------------------------------------------------- {{{ -
 
-;; <a id="core/validate-edn"></a>
+;; <a id="core/load-data"></a>
 
-(defn validate-edn
-  [spec         ; validate against this spec
-   contents]    ; validate these data
-  (loop [cnt contents
-         idx 1]
-    (try
-      (m/assert spec (first cnt))
-      (catch Exception e
+(defn load-data
+  "Reads and validates source and target data. Returns a hash map with `:source-data` and `target-data`."
+  [project]
+  (letfn [(validator [spec idx itm]
+            (try
+              (m/assert spec itm)
+              (catch Exception e
+                (let [data (-> e ex-data :data :explain)]
+                  (throw (ex-info (-> data me/humanize str)
+                                  {:display (-> data :value :display)
+                                   :field (-> data :errors first :in first)
+                                   :index (inc idx)
+                                   :filename (if (= spec SourceDatum)
+                                               "source data"
+                                               "target data")}))))))
+          (loader [key]
+            (->> project
+                 key
+                 (attach-to-path (:project-file project))
+                 (slurp)
+                 (edn/read-string)))]
+    (let [data (if (:get-data-fn project)
+                 ; load from a database
+                 ((:get-data-fn project))
+                 ; load from files
+                 (let [res {:source-data (loader :source-data)}] 
+                   (if (:target-data project)
+                     (merge res {:target-data (loader :target-data)})
+                     res)))]
+      (doall (map-indexed (partial validator SourceDatum) (:source-data data)))
+      (when (:target-data data)
+        (doall (map-indexed (partial validator TargetDatum) (:target-data data)))
+        (check-ids data))
+      data)))
+
+; -------------------------------------------------------------------------------------------- }}} -
+; - load-scs --------------------------------------------------------------------------------- {{{ -
+
+;; <a id="core/load-scs"></a>
+
+(defn load-scs
+  "Reads, evals, and validates sound changes. Returns a vector of functions."
+  [ctx          ; eval in this context
+   project]     ; get scs from this
+  (->> project
+      :sound-changes
+      (attach-to-path (:project-file project))
+      (slurp)
+      (sci/eval-string* ctx)
+      (map-indexed (fn [idx itm]
+                     (try
+                       (m/assert SCItem itm)
+                       (catch Exception e
+                         (let [data (-> e ex-data :data :explain)]
+                           (throw (ex-info (-> data me/humanize str)
+                                           {:display (-> itm meta :name)
+                                            :index   (inc idx)})))))))
+      (doall)))
+
+; -------------------------------------------------------------------------------------------- }}} -
+; - load-projectfile ------------------------------------------------------------------------- {{{ -
+
+;; <a id="core/load-projectfile"></a>
+
+(defn load-projectfile
+  "Reads, evals, and validates a project file. Returns the hash map returned by the project file + `:project-file` containing the path to the project file."
+  [ctx          ; eval in this context
+   filename]
+  (try
+    (->> filename
+         (slurp)
+         (sci/eval-string* ctx)
+         (m/assert ProjectFile)
+         (merge {:project-file filename}))
+    ; probably either sci or malli
+    (catch clojure.lang.ExceptionInfo e
+      (if (= (-> e ex-data :type) :malli.core/coercion)
+        ; malli has specific errors
         (let [data (-> e ex-data :data :explain)]
           (throw (ex-info (-> data me/humanize str)
                           {:display (-> data :value :display)
-                           :field (-> data :errors first :in first)
-                           :index idx})))))
-    (if (next cnt)
-      (recur (rest cnt) (inc idx))
-      contents)))
-
-; -------------------------------------------------------------------------------------------- }}} -
-; - validate-clj ----------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/validate-clj"></a>
-
-(defn validate-clj
-  "Validates a project file against Malli spec."
-  [spec           ; validate against this spec
-   contents]      ; validate this code
-  (condp = spec       ; for some reasone `case` doesn't work here
-    ProjectFile (try
-                  (m/assert ProjectFile contents)
-                  (catch Exception e
-                    (let [data (-> e ex-data :data :explain)]
-                      (throw (ex-info (-> data me/humanize str)
-                                      {:display (-> data :value :display)
-                                       :field (-> data :errors first :in first)})))))
-    SCItem      (doall
-                  (map-indexed (fn [idx itm]
-                                 (try
-                                   (m/assert SCItem itm)
-                                   (catch Exception e
-                                     (let [data (-> e ex-data :data :explain)]
-                                       (throw (ex-info (-> data me/humanize str)
-                                                       {:display (-> itm meta :name)
-                                                        :index   (inc idx)}))))))
-                               contents))
-    (throw (ex-info "Wrong `spec` given to `validate-clj`." {}))))
+                           :field (-> data :errors first :in first)})))
+        ; sci is more sensible
+        (throw (ex-info (ex-message e)
+                        (merge (ex-data e) {:filename filename})))))
+    ; probably java.io.FileNotFoundException
+    (catch Throwable e
+      (throw (ex-info (ex-message e)
+                      (merge (ex-data e) {:filename filename}))))))
 
 ; -------------------------------------------------------------------------------------------- }}} -
 
-; - load-clj --------------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/load-clj"></a>
-
-(defn load-clj
-  "Read and eval a clj file in a sandbox, and validate its return value as sound change functions. Returns a hash map with :status :ok or :error."
-  [ctx          ; load into this sci context
-   spec         ; validate against this spec
-   filename]    ; load this file
-  (try (->> filename
-            (slurp)
-            (sci/eval-string* ctx)
-            (validate-clj spec))
-       (catch Throwable e (throw (ex-info (ex-message e)
-                                          (merge (ex-data e) {:filename filename}))))))
-
-; -------------------------------------------------------------------------------------------- }}} -
-; - load-edn --------------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/load-edn"></a>
-
-(defn load-edn
-  "Read, parse, and validate an edn file. Returns a hash map with :status :ok or :error."
-  [spec          ; validate against this spec
-   filename]     ; load this file
-  (try (->> filename
-            (slurp)
-            (edn/read-string)
-            (validate-edn spec))
-       (catch Throwable e (throw (ex-info (ex-message e)
-                                          (merge (ex-data e) {:filename filename}))))))
-
-; -------------------------------------------------------------------------------------------- }}} -
 ; - load-project ----------------------------------------------------------------------------- {{{ -
 
 ;; <a id="core/load-project"></a>
@@ -319,33 +326,16 @@
   "Load an entire project based on a project file."
   [ctx          ; sci context
    filename]    ; a project file
-  ; errors thrown by validate-clj etc. will be caught by cli/start-repl
-  ; sound changes always loaded from a file; data can be from files, can be from a db
-  ; result is built incrementally: first sound changes, then source data and maybe target data
-  (let [project  (load-clj ctx ProjectFile filename)
-        scs-path (->> project :sound-changes (attach-to-path filename))
-        scs      (load-clj ctx SCItem scs-path)
-        result   {:project-file  filename
-                  :sound-changes scs}]
-    (if (:get-data-fn project)
-      ; either loading from a database…
-      (merge result (:get-data-fn project))
-      ; … or from files
-      (let [src-path (->> project :source-data (attach-to-path filename))
-            src      (load-edn SourceDatum src-path)
-            result   (merge result {:source-data src})]
-        ; target data are optional
-        (if-not (project :target-data)
-          result
-          (let [trg-path (->> project :target-data (attach-to-path filename))
-                trg      (load-edn TargetDatum trg-path)]
-            (check-ids src src-path trg trg-path)
-            (merge result {:target-data trg})))))))
+  (let [project (load-projectfile ctx filename)
+        scs     (load-scs ctx project)
+        data    (load-data project)]
+    (println data)
+    (merge data {:project-file filename     ; data might be both source and target or just source
+                 :sound-changes scs})))
 
 ; -------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================ }}} =
-
 ; = tree operations ============================================================================ {{{ =
 
 ;; <a id="core/tree"></a>
