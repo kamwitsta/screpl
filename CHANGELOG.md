@@ -2,11 +2,10 @@
 
 ## [0.2.0] – 2025-##-##
 ### Added
-– loading data from a database:
-    - project.edn -> project.clj
-    - specs
-    - load-project
-    - update docs
+– loading data from a database
+
+### Changed
+- refactored the data loading procedure
 
 ## [0.1.0] – 2025-06-07
 Initial release.

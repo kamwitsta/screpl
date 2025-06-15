@@ -26,7 +26,7 @@ Data and sound change files cannot be loaded into SCRepl independently, they mus
 
 Luckily, a SCRepl project file is very simple. It is a single hash map with the paths (absolute or relative) to all the other files.
 
-    ; sample-project-file.edn
+    ; sample-project-file.clj
     
     {:source-data "source-data-file.edn"
      :sound-changes "sound-changes-file.clj"
@@ -34,7 +34,35 @@ Luckily, a SCRepl project file is very simple. It is a single hash map with the 
 
 Curly braces mark the beginning and end of a hash map; inside the map, keys are keywords (phrases without spaces, prefixed with a colon), and values are strings (phrases that may include spaces, and are enclosed in quotation marks). Semicolon marks the beginning of a comment, i.e. a piece of information meant for humans rather than SCRepl. (Inside a string, however, a semicolon is just a semicolon, and a colon is just a colon.) Commas between key-value pairs in a map are optional, and whitespace is not significant.
 
-The `:target-data` field, being optional, can be omitted and its value can be set to `nil`. In theory, the map can also include other keys (they will be ignored), and there can be additional uncommented text after the map (it will also be ignored), but neither is recommended.
+The `:target-data` field, being optional, can be omitted and its value can be set to `nil`. In theory, the map can also include other keys (they will be ignored) but it is not recommended.
+
+It is also possible to make the project file quite complex, however. When data are loaded from files, the assumption is that these files have been prepared specifically for SCRepl, and are therefore internally organized in a way that SCRepl can understand. On the other hand, a database might serve multiple purposes and therefore its organization might be very different. Only the user knows what it is, and so it is left to the user to provide a function that reorganizes data fetched from a database into a shape that SCRepl can interpret.
+
+When loading data from a database, the fields `:source-data` and `:target-data` are omitted, and in their place, the field `:get-data-fn` is required, which points to a function that takes no arguments, and returns a hash map with the two omitted fields. To connect to the database, the [Toucan2](https://github.com/camsaul/toucan2) library can be used. One caveat connected with it is that the data it fetches come wrapped in `toucan2.instance/instance`. It may not always be necessary but it is certainly good practice to unwrap them before passing them to SCRepl. It is necessary, on the other hand, to make sure that they are enclosed in a vector rather than a list.
+
+    ; database-based-project.clj
+
+    (require '[toucan2.core :as db])
+
+    (defn get-data []
+      (let [db-config    {:dbtype           "mariadb"
+                          :dbname           "my_database"
+                          :host             "localhost"
+                          :port             3306
+                          :user             "username"
+                          :password         "1234"
+                          :sessionVariables "sql_mode='ANSI_QUOTES'"}
+            source-data  (->> (db/select :conn db-config "WORDS" :language "Proto-Slavic")
+                              (map #(into {} %))      ; unwrap from toucan2.instance/instance
+                              (vec))                  ; ensure vector, not list
+            target-data  (->> (db/select :conn db-config "WORDS" :language "Polish")
+                              (map #(into {} %))
+                              (vec))
+        {:source-data source-data
+         :target-data target-data}))
+
+    {:sound-changes "sample-sound-changes.clj"
+     :get-data-fn get-data}
 
 
 ## 2.2. Source data file
