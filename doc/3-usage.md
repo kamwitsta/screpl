@@ -110,9 +110,9 @@ The function `print-tree` prints the tree to the terminal. If the tree has been 
     └─ a1 fn2
        ...
 
-When a tree is so large that displaying it in the terminal is impractical, `print-tree` can take a filename as an additional argument, and print the tree to a file instead.
+When a tree is so large that displaying it in the terminal is impractical, `print-tree` can take a filename as an additional argument, and print the tree to a file instead. See also `print-products` in section 3.4. below.
 
-It is also possible to test whether a tree contains specific leaves without printing the entire tree. The function `find-paths` returns full paths from the root of the tree to any leaf that satisfies a regular expression:
+In order to test whether a tree contains specific leaves without printing the entire tree. The function `find-paths` returns full paths from the root of the tree to any leaf that satisfies a regular expression:
 
     ; Example 3.2-6
 
@@ -201,9 +201,26 @@ The parameters are, in order:
 3. target item; when missing, the appropriate item is selected from the target data by `:id`;
 4. keys that will used to determine whether the produced result is equal to the target item; when missing, `[:display]` will be used; must be a vector.
 
-The same function can also be applied in batch to an entire dataset. This variant, instead of a single boolean, returns a list of items that do not yield their respective targets, i.e. those which would return `false` with `produces-target?`. Because of this small modification, the batch function is available under a different name: `find-irregulars`.
+There is another, similar function called `print-products`. It lists all the final results of the application of a series of sound changes to a form, and like `produces-target?` it is quite liberal with its arguments:
 
-    ; Example 3.4-2
+    ; Example 3.4-2 
+
+    => (print-products [#'fn1 #'fn2 #'fn3] (get-from-source 1) "/home/kamil/Tmp/products.txt")
+
+    => (print-products [#'fn1 #'fn2 #'fn3] {:display "a"})
+    a → a12a3a, a12a3b, a12a3c, a12b3a, a12b3b, a12b3c
+
+    => (print-products (get-from-source 1) "/home/kamil/Tmp/products.txt")
+
+    => (print-products [(get-from-source 1) (get-from-source 2)])
+    a → a12a3a, a12a3b, a12a3c, a12b3a, a12b3b, a12b3c
+    b → b12a3a, b12a3b, b12a3c, b12b3a, b12b3b, b12b3c
+
+That is, the first argument (optional) is a vector of sound change functions to be applied, the second argument (mandatory) is a either a single hash-map or a vector of hash-maps, and the third argument (optional) is the path to a file if the output is to be written to a file instead of the console. (The file is not overwritten, the results are appended to it.)
+
+The function `produces-target?` can also be applied in batch to an entire dataset. This variant, instead of a single boolean, returns a list of items that do not yield their respective targets, i.e. those which would return `false` with `produces-target?`. Because of this small modification, the batch function is available under a different name: `find-irregulars`.
+
+    ; Example 3.4-3
     
     => (find-irregulars)
     [{:id 3, :display c}]

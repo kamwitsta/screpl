@@ -178,11 +178,11 @@
 
 ;; The only function that is exposed via the UI is [load-project](#core/load-project), which calls all the other functions. The reason for this is this: 1) the `:id` key is only required from source data when target data are also present, and can be omitted otherwise; 2) the ID’s in source data must match the ID’s in target data. Validating the former and ensuring the latter can only be done when all the data are loaded together in one go.
 
-;; - [check-ids](#core/check-ids)
+;; - [load-project](#core/load-project)
+;; - [load-projectfile](#core/load-projectfile)
 ;; - [load-data](#core/load-data)
 ;; - [load-scs](#core/load-scs)
-;; - [load-projectfile](#core/load-projectfile)
-;; - [load-project](#core/load-project)
+;; - [check-ids](#core/check-ids)
 
 ; - check-ids -------------------------------------------------------------------------------- {{{ -
 
@@ -329,7 +329,6 @@
   (let [project (load-projectfile ctx filename)
         scs     (load-scs ctx project)
         data    (load-data project)]
-    (println data)
     (merge data {:project-file filename     ; data might be both source and target or just source
                  :sound-changes scs})))
 
@@ -510,8 +509,34 @@
 ;; Functions that do not care about the nodes, only about the leaves. It is faster to generate just the leaves than to extract them from a [core/Tree](#core/tree).
 
 ;; - [find-irregulars](#core/find-irregulars)
+;; - [print-products](#core/print-products)
 ;; - [produces-target?](#core/produces-target?)
 
+; - print-products ----------------------------------------------------------------------------- {{{ -
+
+;; <a id="core/print-products"></a>
+
+(defn print-products
+  "Applies a series of `functions` to the `source` and prints the results. `source` can be a single hash map or a vector."
+  [functions    ; apply these functions (must be a vector)
+   source       ; to this map / these maps
+   output-fn]   ; and print using this function
+  (letfn [(print-one [src]
+            (let [products (reduce (fn [x f] (mapcat f x))
+                                   [src]
+                                   functions)]
+              (output-fn (str (:display src) " → "))
+              (loop [prod products]
+                (output-fn (-> prod first :display))
+                (when (next prod)
+                  (output-fn ", ")
+                  (recur (next prod))))
+              (output-fn "\n")))]
+    (mapv print-one (if (map? source)
+                      (vector source)
+                      source))))
+
+; ---------------------------------------------------------------------------------------------- }}} -
 ; - produces-target? --------------------------------------------------------------------------- {{{ -
 
 ;; <a id="core/produces-target?"></a>

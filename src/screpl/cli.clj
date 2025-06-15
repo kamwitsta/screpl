@@ -78,7 +78,8 @@
   "Evaluate a string within *sci-ctx*."
   [input]
   (try (let [result (sci/eval-string* *sci-ctx* input)]
-         (if (nil? result)
+         (if (or (nil? result)
+                 (and (coll? result) (every? nil? result)))
            (println)
            (println result "\n")))
        (catch Exception e (message :error e))))
@@ -213,6 +214,7 @@
 ;; - [find-paths](#cli/find-paths)
 ;; - [grow-tree](#cli/grow-tree)
 ;; - [load-project](#cli/load-project)
+;; - [print-products](#cli/print-products)
 ;; - [print-tree](#cli/print-tree)
 ;; - [produces-target?](#cli/produces-target?)
 
@@ -314,6 +316,40 @@
                              (fn [x] (map #(hash-map :active true :fn %) x))))
     (message :ok "Loaded project " filename ".")
     (project-info)))
+
+; ---------------------------------------------------------------------------------------------- }}} -
+; - print-products ----------------------------------------------------------------------------- {{{ -
+
+;; <a id="cli/print-products"></a>
+
+(defn print-products
+  "Wrapper around `core/print-products`. The first argument is `functions` and is optional; the second argument is `source` (mandatory); the third argument is `filename` and is optional."
+
+  ;; No solution through arities, conflict at 2:
+  ;; - source
+  ;; - functions source ‖ source filename
+  ;; - functions source filename
+  
+  ; arity 1
+  ([source]
+   (if @*project*
+     (print-products (->> @*project* :sound-changes (filter :active) (map :fn)) source nil)
+     (message :error (ex-info "No project has been loaded." {}))))
+
+  ; arity 2
+  ([arg1
+    arg2]
+   (if (string? arg2)
+     (print-products (->> @*project* :sound-changes (filter :active) (map :fn)) arg1 arg2)     ; redirect to arity 2
+     (print-products arg1 arg2 nil)))
+
+  ; arity 3
+  ([functions     ; apply these functions
+    source        ; to this map / these maps
+    filename]     ; and print to this file
+   (if filename
+     (core/print-products functions source #(spit filename % :append true))
+     (core/print-products functions source print))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-tree---------------------------------------------------------------------------------- {{{ -
@@ -421,4 +457,5 @@
                                  
                                  ; source : target
                                  'find-irregulars  find-irregulars
+                                 'print-products   print-products
                                  'produces-target? produces-target?}}}))
