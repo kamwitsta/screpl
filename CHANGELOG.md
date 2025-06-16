@@ -2,7 +2,7 @@
 ------------
 
 
-## [0.2.0] – 2025-##-##
+## [0.2.0] – 2025-06-16
 -----------------------
 ### Added
 – loading data from a database
@@ -10,7 +10,7 @@
 
 ### Changed
 - refactored the data loading procedure
-- several minor tweaks
+- minor tweaks
 
 
 ## [0.1.0] – 2025-06-07

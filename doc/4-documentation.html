@@ -2866,7 +2866,7 @@ net.brehaut.ClojureTools = (function (SH) {
   };
 })(SyntaxHighlighter);
 </script><title>screpl -- Marginalia</title></head><body><table><tr><td class="docs"><div class="header"><h1 class="project-name"><a href="https://github.com/kamwitsta/screpl">screpl</a></h1><h2 class="project-version">0.2.0</h2><br /><p>Replication of sound changes</p>
-</div><div class="dependencies"><h3>dependencies</h3><table><tr><td class="dep-name">org.clojure/clojure</td><td class="dotted"><hr /></td><td class="dep-version">1.12.0</td></tr><tr><td class="dep-name">clansi</td><td class="dotted"><hr /></td><td class="dep-version">1.0.0</td></tr><tr><td class="dep-name">io.github.tonsky/fast-edn</td><td class="dotted"><hr /></td><td class="dep-version">1.1.2</td></tr><tr><td class="dep-name">metosin/malli</td><td class="dotted"><hr /></td><td class="dep-version">0.17.0</td></tr><tr><td class="dep-name">org.babashka/sci</td><td class="dotted"><hr /></td><td class="dep-version">0.9.45</td></tr><tr><td class="dep-name">io.github.camsaul/toucan2</td><td class="dotted"><hr /></td><td class="dep-version">1.0.565</td></tr></table></div></td><td class="codes" style="text-align: center; vertical-align: middle;color: #666;padding-right:20px"><br /><br /><br />(this space intentionally left almost blank)</td></tr><tr><td class="docs"><div class="toc"><a name="toc"><h3>namespaces</h3></a><ul><li><a href="#screpl.cli">screpl.cli</a></li><li><a href="#screpl.core">screpl.core</a></li><li><a href="#screpl.main">screpl.main</a></li></ul></div></td><td class="codes">&nbsp;</td></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#screpl.cli" name="screpl.cli"><h1 class="project-name">screpl.cli</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>A REPL-based user interface.</p>
+</div><div class="dependencies"><h3>dependencies</h3><table><tr><td class="dep-name">org.clojure/clojure</td><td class="dotted"><hr /></td><td class="dep-version">1.12.0</td></tr><tr><td class="dep-name">clansi</td><td class="dotted"><hr /></td><td class="dep-version">1.0.0</td></tr><tr><td class="dep-name">io.github.tonsky/fast-edn</td><td class="dotted"><hr /></td><td class="dep-version">1.1.2</td></tr><tr><td class="dep-name">metosin/malli</td><td class="dotted"><hr /></td><td class="dep-version">0.17.0</td></tr><tr><td class="dep-name">org.mariadb.jdbc/mariadb-java-client</td><td class="dotted"><hr /></td><td class="dep-version">3.5.3</td></tr><tr><td class="dep-name">org.babashka/sci</td><td class="dotted"><hr /></td><td class="dep-version">0.9.45</td></tr><tr><td class="dep-name">io.github.camsaul/toucan2</td><td class="dotted"><hr /></td><td class="dep-version">1.0.565</td></tr></table></div></td><td class="codes" style="text-align: center; vertical-align: middle;color: #666;padding-right:20px"><br /><br /><br />(this space intentionally left almost blank)</td></tr><tr><td class="docs"><div class="toc"><a name="toc"><h3>namespaces</h3></a><ul><li><a href="#screpl.cli">screpl.cli</a></li><li><a href="#screpl.core">screpl.core</a></li><li><a href="#screpl.main">screpl.main</a></li></ul></div></td><td class="codes">&nbsp;</td></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#screpl.cli" name="screpl.cli"><h1 class="project-name">screpl.cli</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>A REPL-based user interface.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Exposes to the user functions from <a href="#screpl.core">screpl.core</a>.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><ol>
 <li><a href="#cli/globals">Global variables</a></li>
@@ -2877,7 +2877,8 @@ net.brehaut.ClojureTools = (function (SH) {
 </td><td class="codes"><pre class="brush: clojure">(ns screpl.cli
   (:require [clojure.math :as math]
             [sci.core :as sci]
-            [screpl.core :as core]))</pre></td></tr><tr><td class="docs"><p><a id="cli/globals"></a></p>
+            [screpl.core :as core]
+            [toucan2.core :as db]))</pre></td></tr><tr><td class="docs"><p><a id="cli/globals"></a></p>
 
 <h2>Global variables</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Some functions need to know about <a href="#cli/*sci-ctx*">cli/<em>sci-ctx</em></a>, but the variable itself can only be initiated with references to other functions. Declaring <a href="#cli/*sci-ctx*">cli/<em>sci-ctx</em></a> first and defining functions later does work, the reverse doesn’t.</p>
@@ -2922,7 +2923,8 @@ net.brehaut.ClojureTools = (function (SH) {
 </td><td class="codes"><pre class="brush: clojure">(defn eval-sci-string
   [input]
   (try (let [result (sci/eval-string* *sci-ctx* input)]
-         (if (nil? result)
+         (if (or (nil? result)
+                 (and (coll? result) (every? nil? result)))
            (println)
            (println result &quot;\n&quot;)))
        (catch Exception e (message :error e))))</pre></td></tr><tr><td class="docs"><p><a id="cli/get-from-"></a></p>
@@ -3011,6 +3013,7 @@ net.brehaut.ClojureTools = (function (SH) {
 <li><a href="#cli/find-paths">find-paths</a></li>
 <li><a href="#cli/grow-tree">grow-tree</a></li>
 <li><a href="#cli/load-project">load-project</a></li>
+<li><a href="#cli/print-products">print-products</a></li>
 <li><a href="#cli/print-tree">print-tree</a></li>
 <li><a href="#cli/produces-target?">produces-target?</a></li>
 </ul>
@@ -3078,9 +3081,34 @@ net.brehaut.ClojureTools = (function (SH) {
   [filename]    ; the file to process
   (let [result (core/load-project *sci-ctx* filename)]
     (reset! *project* (update result :sound-changes
-                              (fn [x] (map #(hash-map :active true :fn %) x))))
+                             (fn [x] (map #(hash-map :active true :fn %) x))))
     (message :ok &quot;Loaded project &quot; filename &quot;.&quot;)
-    (project-info)))</pre></td></tr><tr><td class="docs"><p><a id="cli/print-tree"></a></p>
+    (project-info)))</pre></td></tr><tr><td class="docs"><p><a id="cli/print-products"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Wrapper around <code>core/print-products</code>. The first argument is <code>functions</code> and is optional; the second argument is <code>source</code> (mandatory); the third argument is <code>filename</code> and is optional.</p>
+
+<p>No solution through arities, conflict at 2:
+- source
+- functions source ‖ source filename
+- functions source filename</p>
+</td><td class="codes"><pre class="brush: clojure">(defn print-products
+  ; arity 1
+  ([source]
+   (if @*project*
+     (print-products (-&gt;&gt; @*project* :sound-changes (filter :active) (map :fn)) source nil)
+     (message :error (ex-info &quot;No project has been loaded.&quot; {}))))
+  ; arity 2
+  ([arg1
+    arg2]
+   (if (string? arg2)
+     (print-products (-&gt;&gt; @*project* :sound-changes (filter :active) (map :fn)) arg1 arg2)     ; redirect to arity 2
+     (print-products arg1 arg2 nil)))
+  ; arity 3
+  ([functions     ; apply these functions
+    source        ; to this map / these maps
+    filename]     ; and print to this file
+   (if filename
+     (core/print-products functions source #(spit filename % :append true))
+     (core/print-products functions source print))))</pre></td></tr><tr><td class="docs"><p><a id="cli/print-tree"></a></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Wrapper around <code>core/print-tree</code>. Arity 1 prints to stdout, arity 2 to a file.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn print-tree
   ; arity 1
@@ -3142,7 +3170,9 @@ net.brehaut.ClojureTools = (function (SH) {
                           progressbar)))</pre></td></tr><tr><td class="docs"><p><a id="cli/*sci-ctx*"></a></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Global variable, holds the context for SCI. Must be defined after all the functions it exposes.</p>
 </td><td class="codes"><pre class="brush: clojure">(def ^:dynamic *sci-ctx*
-  (sci/init {:namespaces {'user {; project-related
+  (sci/init {:namespaces {'clojure.set (sci/copy-ns clojure.set (sci/create-ns 'clojure.set))
+                          'toucan2.core (sci/copy-ns toucan2.core (sci/create-ns 'toucan2.core))
+                          'user {; project-related
                                  'load-project     load-project
                                  'project-info     project-info
                                  'reload-project   reload-project
@@ -3156,6 +3186,7 @@ net.brehaut.ClojureTools = (function (SH) {
                                  'print-tree       print-tree
                                  ; source : target
                                  'find-irregulars  find-irregulars
+                                 'print-products   print-products
                                  'produces-target? produces-target?}}}))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#screpl.core" name="screpl.core"><h1 class="project-name">screpl.core</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>The main library.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Functions defined here are made available to the user via <a href="#screpl.cli">screpl.cli</a>.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><ol>
@@ -3223,25 +3254,11 @@ net.brehaut.ClojureTools = (function (SH) {
 
 <h2>Specifications for data provided by the user</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><ul>
-<li><a href="#core/projectfile">ProjectFile</a></li>
-<li><a href="#core/source-target-datum">SourceDatum, TargetDatum</a></li>
-<li><a href="#core/scfun">=>SCFun</a></li>
+<li><a href="#core/source-target-datum">Data: SourceDatum, TargetDatum</a></li>
+<li><a href="#core/scfun">Sound changes: SCItem, =>SCFun</a></li>
+<li><a href="#core/projectfile">Project: ProjectFile, =>GetDataFn</a></li>
 </ul>
-</td><td class="codes"></td></tr><tr><td class="docs"><p><a id="core/projectfile"></a></p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Spec for the file containing paths to other files in the project.</p>
-
-<p>sdfjsdkl</p>
-
-<p>jdlfjsdl</p>
-</td><td class="codes"><pre class="brush: clojure">(def ProjectFile
-  [:or
-    [:map
-     [:sound-changes string?]
-     [:source-data string?]
-     [:data-target {:optional true} string?]]
-    [:map
-     [:sound-changes string?]
-     [:db-config]]])</pre></td></tr><tr><td class="docs"><p><a id="core/source-target-datum"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p><a id="core/source-target-datum"></a></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>This repeats in Source- and TargetDatum</p>
 </td><td class="codes"><pre class="brush: clojure">(def DataId
   [:or int? keyword? string?])</pre></td></tr><tr><td class="docs"><p>A single item in the source data.</p>
@@ -3253,141 +3270,162 @@ net.brehaut.ClojureTools = (function (SH) {
   [:map
    [:display string?]
    [:id #'DataId]])</pre></td></tr><tr><td class="docs"><p><a id="core/scfun"></a></p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>A single sound change function.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>A single sound change function, deref’ed.</p>
 </td><td class="codes"><pre class="brush: clojure">(def =&gt;SCFun
   (m/schema
     [:=&gt; [:cat #'SourceDatum] [:vector #'SourceDatum]]
-    {::m/function-checker mg/function-checker}))</pre></td></tr><tr><td class="docs"><p><a id="core/data"></a></p>
+    {::m/function-checker mg/function-checker}))</pre></td></tr><tr><td class="docs"><p>A single sound change functions, as loaded from a file (a sci.lang.Var).</p>
+</td><td class="codes"><pre class="brush: clojure">(def SCItem
+  [:and
+   [:fn {:error/message &quot;Not a SCI var. Did you forget to prepend `#'`?&quot;} #(instance? sci.lang.Var %)]
+   [:fn {:error/message &quot;Function must conform to =&gt;SCFun schema.&quot;} #(m/validate =&gt;SCFun (deref %))]])</pre></td></tr><tr><td class="docs"><p><a id="core/projectfile"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(def =&gt;GetDataFn
+  ; A function that retrieves data from a database and converts them to regular Clojure hash maps. Takes no arguments and returns data as vectors wrapped in a map: `{:source-data [SourceDatum]}` or `{:source-data [SourceDatum], :target-data [TargetDatum]}`.
+  (m/schema
+    [:=&gt;
+     :cat
+     [:map [:source-data [:vector #'SourceDatum]]
+           [:target-data {:optional true} [:vector #'TargetDatum]]]]
+    {::m/function-checker mg/function-checker}))</pre></td></tr><tr><td class="docs"><p>Spec for the file containing paths to other files in the project.</p>
+
+<p>Data can either be loaded from files…</p>
+
+<p>… or from a database.</p>
+</td><td class="codes"><pre class="brush: clojure">(def ProjectFile
+  [:or
+   [:map
+    [:sound-changes string?]
+    [:source-data string?]
+    [:data-target {:optional true} string?]]
+   [:map
+    [:sound-changes string?]
+    [:get-data-fn #'=&gt;GetDataFn]]])</pre></td></tr><tr><td class="docs"><p><a id="core/data"></a></p>
 
 <h2>Loading users’ code and data</h2>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>The only function that is exposed via the UI is <a href="#core/load-project">load-project</a>, which calls all the other functions. There are two reasons for this: 1) the <code>:id</code> key is only required from source data when target data are also present, and can be omitted otherwise; 2) the ID’s in source data must match the ID’s in target data. Validating the former and ensuring the latter can only be done when all the data are loaded together in one go.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>The only function that is exposed via the UI is <a href="#core/load-project">load-project</a>, which calls all the other functions. The reason for this is this: 1) the <code>:id</code> key is only required from source data when target data are also present, and can be omitted otherwise; 2) the ID’s in source data must match the ID’s in target data. Validating the former and ensuring the latter can only be done when all the data are loaded together in one go.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><ul>
-<li><a href="#core/check-ids">check-ids</a></li>
-<li><a href="#core/validate-clj">validate-clj</a></li>
-<li><a href="#core/validate-edn">validate-edn</a></li>
-<li><a href="#core/load-clj">load-clj</a></li>
-<li><a href="#core/load-edn">load-edn</a></li>
 <li><a href="#core/load-project">load-project</a></li>
+<li><a href="#core/load-projectfile">load-projectfile</a></li>
+<li><a href="#core/load-data">load-data</a></li>
+<li><a href="#core/load-scs">load-scs</a></li>
+<li><a href="#core/check-ids">check-ids</a></li>
 </ul>
 </td><td class="codes"></td></tr><tr><td class="docs"><p><a id="core/check-ids"></a></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Makes sure ids in source and target data are present, unique, and matching.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn check-ids
-  [source       ; source data
-   src-path     ; for error reporting purposes
-   target       ; target data
-   trg-path]    ; for error reporting purposes
-  (let [src-ids (map :id source)
-        trg-ids (map :id target)]
+  [data]     ; hash-map with `:source-data` and `:target-data`
+  (let [src-ids (-&gt;&gt; data :source-data (map :id))
+        trg-ids (-&gt;&gt; data :target-data (map :id))]
     ; check unique
     (when-let [dups (seq (duplicates src-ids))]
-      (throw (ex-info (str &quot;Duplicate ids: &quot; dups) {:filename src-path})))
+      (throw (ex-info (str &quot;Duplicate ids: &quot; dups) {:filename &quot;source data&quot;})))
     (when-let [dups (seq (duplicates trg-ids))]
-      (throw (ex-info (str &quot;Duplicate ids: &quot; dups) {:filename trg-path})))
+      (throw (ex-info (str &quot;Duplicate ids: &quot; dups) {:filename &quot;target data&quot;})))
     ; check missing ids
-    (when-let [miss (-&gt;&gt; (map #(when (nil? %1) %2) src-ids (map :display source))
+    (when-let [miss (-&gt;&gt; (map #(when (nil? %1) %2) src-ids (-&gt;&gt; data :source-data (map :display)))
                          (remove nil?)
                          (seq))]
-      (throw (ex-info (str &quot;Missing ids: &quot; miss) {:filename src-path})))
-    (when-let [miss (-&gt;&gt; (map #(when (nil? %1) %2) trg-ids (map :display target))
+      (throw (ex-info (str &quot;Missing ids: &quot; miss) {:filename &quot;source data&quot;})))
+    (when-let [miss (-&gt;&gt; (map #(when (nil? %1) %2) trg-ids (-&gt;&gt; data :target-data (map :display)))
                          (remove nil?)
                          (seq))]
-      (throw (ex-info (str &quot;Missing ids: &quot; miss) {:filename trg-path})))
+      (throw (ex-info (str &quot;Missing ids: &quot; miss) {:filename &quot;target data&quot;})))
     ; check unmatched ids
     (when-let [unm (-&gt;&gt; (set/difference (set src-ids) (set trg-ids))
                         (remove nil?)
                         (seq))]
-      (throw (ex-info (str &quot;Unmatched ids: &quot; unm) {:filename src-path})))
+      (throw (ex-info (str &quot;Unmatched ids: &quot; unm) {:filename &quot;source data&quot;})))
     (when-let [unm (-&gt;&gt; (set/difference (set trg-ids) (set src-ids))
                         (remove nil?)
                         (seq))]
-      (throw (ex-info (str &quot;Unmatched ids: &quot; unm) {:filename trg-path})))))</pre></td></tr><tr><td class="docs"><p><a id="core/validate-clj"></a></p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Validates code against a Malli spec.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn validate-clj
-  [contents]
-  (letfn [(not-sci-var? [x] (not= (type x) sci.lang.Var))]
-    (loop [cnt contents
-           idx 1]
-      (when (not-sci-var? (first cnt))
-        (throw (ex-info &quot;Not a SCI var. Did you forget to prepend `#'`?&quot; {:index idx})))
-      (try (m/assert =&gt;SCFun @(first cnt))
-           (catch Exception e
-             (let [data (-&gt; e ex-data :data :explain)]
-               (throw (ex-info (-&gt; data me/humanize str)
-                               {:display (-&gt; cnt first meta :name)
-                                :index idx})))))
-      (if (next cnt)
-        (recur (rest cnt) (inc idx))
-        contents))))</pre></td></tr><tr><td class="docs"><p><a id="core/validate-edn"></a></p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Validates data against a Malli spec. A single pass in the case of a project file, and recursively for source and target data.</p>
-</td><td class="codes"><pre class="brush: clojure">(defmulti validate-edn
-  (fn [spec _] (if (= spec ProjectFile) :project :data)))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defmethod validate-edn :data
-  [spec         ; validate against this spec
-   contents]    ; validate these data
-  (loop [cnt contents
-         idx 1]
-    (try
-      (m/assert spec (first cnt))
-      (catch Exception e
+      (throw (ex-info (str &quot;Unmatched ids: &quot; unm) {:filename &quot;target data&quot;})))))</pre></td></tr><tr><td class="docs"><p><a id="core/load-data"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Reads and validates source and target data. Returns a hash map with <code>:source-data</code> and <code>target-data</code>.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn load-data
+  [project]
+  (letfn [(validator [spec idx itm]
+            (try
+              (m/assert spec itm)
+              (catch Exception e
+                (let [data (-&gt; e ex-data :data :explain)]
+                  (throw (ex-info (-&gt; data me/humanize str)
+                                  {:display (-&gt; data :value :display)
+                                   :field (-&gt; data :errors first :in first)
+                                   :index (inc idx)
+                                   :filename (if (= spec SourceDatum)
+                                               &quot;source data&quot;
+                                               &quot;target data&quot;)}))))))
+          (loader [key]
+            (-&gt;&gt; project
+                 key
+                 (attach-to-path (:project-file project))
+                 (slurp)
+                 (edn/read-string)))]
+    (let [data (if (:get-data-fn project)
+                 ; load from a database
+                 ((:get-data-fn project))
+                 ; load from files
+                 (let [res {:source-data (loader :source-data)}] 
+                   (if (:target-data project)
+                     (merge res {:target-data (loader :target-data)})
+                     res)))]
+      (doall (map-indexed (partial validator SourceDatum) (:source-data data)))
+      (when (:target-data data)
+        (doall (map-indexed (partial validator TargetDatum) (:target-data data)))
+        (check-ids data))
+      data)))</pre></td></tr><tr><td class="docs"><p><a id="core/load-scs"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Reads, evals, and validates sound changes. Returns a vector of functions.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn load-scs
+  [ctx          ; eval in this context
+   project]     ; get scs from this
+  (-&gt;&gt; project
+      :sound-changes
+      (attach-to-path (:project-file project))
+      (slurp)
+      (sci/eval-string* ctx)
+      (map-indexed (fn [idx itm]
+                     (try
+                       (m/assert SCItem itm)
+                       (catch Exception e
+                         (let [data (-&gt; e ex-data :data :explain)]
+                           (throw (ex-info (-&gt; data me/humanize str)
+                                           {:display (-&gt; itm meta :name)
+                                            :index   (inc idx)})))))))
+      (doall)))</pre></td></tr><tr><td class="docs"><p><a id="core/load-projectfile"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Reads, evals, and validates a project file. Returns the hash map returned by the project file + <code>:project-file</code> containing the path to the project file.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn load-projectfile
+  [ctx          ; eval in this context
+   filename]
+  (try
+    (-&gt;&gt; filename
+         (slurp)
+         (sci/eval-string* ctx)
+         (m/assert ProjectFile)
+         (merge {:project-file filename}))
+    ; probably either sci or malli
+    (catch clojure.lang.ExceptionInfo e
+      (if (= (-&gt; e ex-data :type) :malli.core/coercion)
+        ; malli has specific errors
         (let [data (-&gt; e ex-data :data :explain)]
           (throw (ex-info (-&gt; data me/humanize str)
                           {:display (-&gt; data :value :display)
-                           :field (-&gt; data :errors first :in first)
-                           :index idx})))))
-    (if (next cnt)
-      (recur (rest cnt) (inc idx))
-      contents)))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defmethod validate-edn :project
-  [_            ; must be ProjectFile
-   contents]    ; validate these data
-  (try
-    (m/assert ProjectFile contents)
-    (catch Exception e
-      (let [data (-&gt; e ex-data :data :explain)]
-        (throw (ex-info (-&gt; data me/humanize str)
-                        {:display (-&gt; data :value :display)
-                         :field (-&gt; data :errors first :in first)}))))))</pre></td></tr><tr><td class="docs"><p><a id="core/load-clj"></a></p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Read and eval a clj file in a sandbox, and validate its return value as sound change functions. Returns a hash map with :status :ok or :error.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn load-clj
-  [ctx          ; sci context
-   filename]    ; the file to process
-  (try (-&gt;&gt; filename
-            (slurp)
-            (sci/eval-string* ctx)
-            (validate-clj))
-       (catch Throwable e (throw (ex-info (ex-message e)
-                                          (merge (ex-data e) {:filename filename}))))))</pre></td></tr><tr><td class="docs"><p><a id="core/load-edn"></a></p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Read, parse, and validate an edn file. Returns a hash map with :status :ok or :error.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn load-edn
-  [spec          ; validate against this spec
-   filename]     ; the file to process
-  (try (-&gt;&gt; filename
-            (slurp)
-            (edn/read-string)
-            (validate-edn spec))
-       (catch Throwable e (throw (ex-info (ex-message e)
-                                          (merge (ex-data e) {:filename filename}))))))</pre></td></tr><tr><td class="docs"><p><a id="core/load-project"></a></p>
+                           :field (-&gt; data :errors first :in first)})))
+        ; sci is more sensible
+        (throw (ex-info (ex-message e)
+                        (merge (ex-data e) {:filename filename})))))
+    ; probably java.io.FileNotFoundException
+    (catch Throwable e
+      (throw (ex-info (ex-message e)
+                      (merge (ex-data e) {:filename filename}))))))</pre></td></tr><tr><td class="docs"><p><a id="core/load-project"></a></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Load an entire project based on a project file.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn ^:export load-project
   [ctx          ; sci context
    filename]    ; a project file
-  ; load the entire project first, then check if also target data
-  ; errors thrown by validate-clj etc. will be caught by cli/start-repl
-  (let [project  (load-edn ProjectFile filename)
-        scs-path (-&gt;&gt; project :sound-changes (attach-to-path filename))
-        src-path (-&gt;&gt; project :source-data (attach-to-path filename))
-        scs      (load-clj ctx scs-path)
-        source   (load-edn SourceDatum src-path)
-        result   {:project-file  filename
-                  :sound-changes scs
-                  :source-data   source}]
-    ; target data are optional
-    (if-not (project :target-data)
-      result
-      (let [trg-path (-&gt;&gt; project :target-data (attach-to-path filename))
-            target   (load-edn TargetDatum trg-path)]
-        (check-ids source src-path target trg-path)
-        (merge result {:target-data target})))))</pre></td></tr><tr><td class="docs"><p><a id="core/tree"></a></p>
+  (let [project (load-projectfile ctx filename)
+        scs     (load-scs ctx project)
+        data    (load-data project)]
+    (merge data {:project-file filename     ; data might be both source and target or just source
+                 :sound-changes scs})))</pre></td></tr><tr><td class="docs"><p><a id="core/tree"></a></p>
 
 <h2>Extract information from core/Tree’s</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><ul>
@@ -3510,9 +3548,29 @@ net.brehaut.ClojureTools = (function (SH) {
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Functions that do not care about the nodes, only about the leaves. It is faster to generate just the leaves than to extract them from a <a href="#core/tree">core/Tree</a>.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><ul>
 <li><a href="#core/find-irregulars">find-irregulars</a></li>
+<li><a href="#core/print-products">print-products</a></li>
 <li><a href="#core/produces-target?">produces-target?</a></li>
 </ul>
-</td><td class="codes"></td></tr><tr><td class="docs"><p><a id="core/produces-target?"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p><a id="core/print-products"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Applies a series of <code>functions</code> to the <code>source</code> and prints the results. <code>source</code> can be a single hash map or a vector.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn print-products
+  [functions    ; apply these functions (must be a vector)
+   source       ; to this map / these maps
+   output-fn]   ; and print using this function
+  (letfn [(print-one [src]
+            (let [products (reduce (fn [x f] (mapcat f x))
+                                   [src]
+                                   functions)]
+              (output-fn (str (:display src) &quot; → &quot;))
+              (loop [prod products]
+                (output-fn (-&gt; prod first :display))
+                (when (next prod)
+                  (output-fn &quot;, &quot;)
+                  (recur (next prod))))
+              (output-fn &quot;\n&quot;)))]
+    (mapv print-one (if (map? source)
+                      (vector source)
+                      source))))</pre></td></tr><tr><td class="docs"><p><a id="core/produces-target?"></a></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Applies a series of <code>functions</code> to the <code>source</code> hash map and checks whether any of the results is equal to <code>target</code> on selected <code>keys</code>.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn ^:export produces-target?
   [functions    ; through these functions
