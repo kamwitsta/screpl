@@ -55,7 +55,7 @@
                         (:index data) (conj (str " in item " (:index data)))
                         (:display data) (conj (str " (" (:display data) ")"))
                         (:field data) (conj (str " in " (:field data))))]
-             (println (str "[ ✗ ] Error" (apply str bits) ":\n      " (err :cause) "\n")))
+             (println (str "[ ✗ ] Error" (apply str bits) ":\n      " (:cause err) "\n")))
     :info  (println (str "[ 🛈 ] " (apply str messages)))
     :ok    (println (str "[ ✓ ] " (apply str messages)))
     :quest (let [options (second messages)]
