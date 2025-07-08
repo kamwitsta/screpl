@@ -61,8 +61,17 @@
 
 ;; <a id="gui/data-view"></a>
 
-(defn- column-maker
-  "A column in tables displaying sound changes and data."
+(defn- cell-factory
+  "Makes a single cell for the list displaying sound changes."
+  [item]
+  {:fx/type :h-box
+   :children [{:fx/type :check-box
+               :selected true}
+              {:fx/type :label
+               :text "ddhjfl"}]})
+
+(defn- column-factory
+  "Makes a single column for tables displaying source and target data."
   [property]    ; the keyword in source- and target-data
   (case property
     :display {:fx/type :table-column
@@ -82,21 +91,27 @@
    :padding 10
    :spacing 10
    :children (cond-> [; sound changes
+                      {:fx/type :list-view
+                       :items ["a" "b"]
+                       :cell-factory {:fx/type :cell
+                                      :describe (fn [item] {:fx/type :label 
+                                                            :text (str item)})}}
+                       ; :items (:sound-changes state)
                       ; source-data
                       {:fx/type :table-view
                        :column-resize-policy :constrained
                        :columns (if (empty? (:target-data state))
-                                  [(column-maker :display)]
-                                  [(column-maker :id)
-                                   (column-maker :display)])
+                                  [(column-factory :display)]
+                                  [(column-factory :id)
+                                   (column-factory :display)])
                        :items (:source-data state)
                        :selection-mode :multiple}]
                ; target data
                (seq (:target-data state))
                (conj {:fx/type :table-view
                       :column-resize-policy :constrained
-                      :columns [(column-maker :id)
-                                (column-maker :display)]
+                      :columns [(column-factory :id)
+                                (column-factory :display)]
                       :items (:target-data state)
                       :selection-mode :multiple}))})
 
