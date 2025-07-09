@@ -61,19 +61,55 @@
 
 ;; <a id="gui/data-view"></a>
 
+(defn- cell-factory
+  "Makes a single cell for the list displaying sound changes."
+  [item]
+  {:fx/type :h-box
+   :children [{:fx/type :check-box
+               :selected true}
+              {:fx/type :label
+               :text "ddhjfl"}]})
+
 (defn- column-maker
-  "A column in tables displaying sound changes and data."
+  "Makes a single column for tables displaying source and target data."
   [property]    ; the keyword in source- and target-data
   (case property
     :display {:fx/type :table-column
               :cell-value-factory property
-              :pref-width 4
+              :pref-width 150
               :text "Display"} 
     :id      {:fx/type :table-column
               :cell-value-factory property
-              :pref-width 1
+              :pref-width 50
               :text "ID"}
     (throw (ex-info "An error that shouldn't have happened in column-factory." {})))) 
+
+(defn- data-tooltip
+  "Makes a tooltip for source and target datum's."
+  [item]
+  {:tooltip {:fx/type :tooltip
+             :show-delay [333 :ms]
+             :text (->> item
+                        (map (fn [[k v]] (str (name k) ": " (pr-str v))))
+                        (string/join "\n"))}})
+
+(defn- item-view
+  "Makes a view for a singe sound change."
+  [item]
+  {:fx/type :h-box
+   :padding 3
+   :spacing 5
+   :children [{:fx/type :check-box
+               :on-action (fn [_]
+                            (swap! *state update :sound-changes
+                                   (partial map (fn [i]
+                                                  (cond-> i
+                                                    (= (:id i) (:id item))
+                                                    (update :active? not))))))
+               :selected (:active? item)}
+              {:fx/type :label
+               :disable (-> item :active? not)
+               :text (-> item :fn meta :name str)}]})
 
 (defn- data-view
   "Tables displaying sound changes and data."
@@ -82,6 +118,10 @@
    :padding 10
    :spacing 10
    :children (cond-> [; sound changes
+                      {:fx/type :scroll-pane
+                       :content {:fx/type :v-box
+                                 :children (map item-view (:sound-changes state))}
+                       :pref-width 150}
                       ; source-data
                       {:fx/type :table-view
                        :column-resize-policy :constrained
@@ -90,6 +130,8 @@
                                   [(column-maker :id)
                                    (column-maker :display)])
                        :items (:source-data state)
+                       :row-factory {:fx/cell-type :table-row
+                                     :describe data-tooltip}
                        :selection-mode :multiple}]
                ; target data
                (seq (:target-data state))
@@ -98,6 +140,8 @@
                       :columns [(column-maker :id)
                                 (column-maker :display)]
                       :items (:target-data state)
+                      :row-factory {:fx/cell-type :table-row
+                                    :describe data-tooltip}
                       :selection-mode :multiple}))})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -174,7 +218,12 @@
         (when (seq (:target-data project))
           (swap! *state assoc :target-data (:target-data project)))
         (swap! *state assoc :source-data (:source-data project))
-        (swap! *state assoc :sound-changes (:sound-changes project))))))
+        (swap! *state assoc :sound-changes (map-indexed
+                                             (fn [idx itm]
+                                               (hash-map :active? true
+                                                         :fn itm
+                                                         :id idx))
+                                             (:sound-changes project)))))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
@@ -203,6 +252,8 @@
 
 ;; - [message](#gui/message)
 ;; - [renderer](#gui/renderer)
+;; - [start-gui](#gui/start-gui)
+;; - [stop-gui](#gui/stop-gui)
 
 ; - message ------------------------------------------------------------------------------------ {{{ -
 
@@ -230,10 +281,11 @@
 
 ;; <a id="gui/renderer"></a>
 
-;; dsxsdz
+;; A layer of abstraction that takes care of the changing state. See https://github.com/cljfx/cljfx?tab=readme-ov-file#renderer 
 (def renderer
   (fx/create-renderer
     :middleware (fx/wrap-map-desc root-view)
+    ; improved errors; see https://github.com/cljfx/dev
     :error-handler (bound-fn [^Throwable ex] (.printStackTrace ^Throwable ex *err*))
     :opts {:fx.opt/map-event-handler event-handler 
            ; improved errors; see https://github.com/cljfx/dev
@@ -242,7 +294,10 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - start-gui ---------------------------------------------------------------------------------- {{{ -
 
+;; <a id="gui/start-gui"></a>
+
 (defn ^:export start-gui
+  "Start the GUI"
   []
   ; (javafx.application.Platform/setImplicitExit true)
   ; (fx/on-fx-thread
@@ -251,7 +306,10 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - stop-gui ----------------------------------------------------------------------------------- {{{ -
 
+;; <a id="gui/stop-gui"></a>
+
 (defn ^:export stop-gui
+  "Stop the GUI."
   []
   ; (fx/on-fx-thread
   (fx/unmount-renderer *state renderer))
