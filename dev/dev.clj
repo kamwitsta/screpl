@@ -12,4 +12,5 @@
 (start-gui)
 
 (comment
+  run this inside lein repl if it says it can't find stop-gui
   (require '[clojure.tools.namespace.repl :refer [refresh]]) (refresh))
