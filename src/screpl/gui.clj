@@ -1,3 +1,10 @@
+;; A JavaFX user interface.
+
+;; 1. [Global variables](#gui/globals)
+;; 2. [Parts of the interface](#gui/views)
+;; 3. [Functionality](#gui/handlers)
+;; 4. [Other](#gui/other)
+
 (ns screpl.gui
   (:require [cljfx.api :as fx]
             [clojure.string :as string]
@@ -6,9 +13,13 @@
   (:import [javafx.scene.control Dialog DialogEvent]
            [javafx.stage FileChooser FileChooser$ExtensionFilter]))
 
-(declare message stop-gui)
 
 ; = globals ==================================================================================== {{{ =
+
+;; <a id="gui/globals"></a>
+;; ## Global variables
+
+(declare message stop-gui)
 
 (def ^:dynamic *sci-ctx*
  "Global variable, holds the context for SCI."
@@ -19,23 +30,83 @@
   (atom {:buttons [{:fx/type :button
                     :text "Load project"
                     :on-action {:event/type :load-project}}]
-         :source-data []
-         :target-data []}))
+         :sound-changes []
+         :source-data []}))
 
 ; ============================================================================================== }}} =
 ; = views ====================================================================================== {{{ =
 
+;; <a id="gui/views"></a>
+;; ## Parts of the interface
+
+;; Functions that describe the look and behaviour of the GUI.
+
+;; - [buttons](#gui/buttons-view)
+;; - [dialog](#gui/dialog-view)
+;; - [data](#gui/data-view)
+;; - [root](#gui/root-view)
+
 ; - buttons ------------------------------------------------------------------------------------ {{{ -
 
-(defn buttons-view
+;; <a id="gui/buttons-view"></a>
+
+(defn- buttons-view
+  "A bar with buttons exposing core functions."
   [state]
   {:fx/type :tool-bar
    :items (:buttons state)})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
+; - data --------------------------------------------------------------------------------------- {{{ -
+
+;; <a id="gui/data-view"></a>
+
+(defn- column-maker
+  "A column in tables displaying sound changes and data."
+  [property]    ; the keyword in source- and target-data
+  (case property
+    :display {:fx/type :table-column
+              :cell-value-factory property
+              :pref-width 4
+              :text "Display"} 
+    :id      {:fx/type :table-column
+              :cell-value-factory property
+              :pref-width 1
+              :text "ID"}
+    (throw (ex-info "An error that shouldn't have happened in column-factory." {})))) 
+
+(defn- data-view
+  "Tables displaying sound changes and data."
+  [state]
+  {:fx/type :h-box
+   :padding 10
+   :spacing 10
+   :children (cond-> [; sound changes
+                      ; source-data
+                      {:fx/type :table-view
+                       :column-resize-policy :constrained
+                       :columns (if (empty? (:target-data state))
+                                  [(column-maker :display)]
+                                  [(column-maker :id)
+                                   (column-maker :display)])
+                       :items (:source-data state)
+                       :selection-mode :multiple}]
+               ; target data
+               (seq (:target-data state))
+               (conj {:fx/type :table-view
+                      :column-resize-policy :constrained
+                      :columns [(column-maker :id)
+                                (column-maker :display)]
+                      :items (:target-data state)
+                      :selection-mode :multiple}))})
+
+; ---------------------------------------------------------------------------------------------- }}} -
 ; - dialog ------------------------------------------------------------------------------------- {{{ -
 
-(defn dialog-view
+;; <a id="gui/dialog-view"></a>
+
+(defn- dialog-view
+  "A dialog to display errors etc."
   [type       ; :error
    header     ; title text
    content]   ; main text
@@ -50,45 +121,20 @@
    :button-types [:ok]})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
-; - data --------------------------------------------------------------------------------------- {{{ -
-
-(defn column-factory
-  [property]    ; the keyword in source- and target-data
-  {:fx/type :table-column
-   :text (-> property name string/capitalize)
-   :cell-value-factory property})
-
-(defn data-view
-  [state]
-  {:fx/type :h-box
-   :children (cond-> [{:fx/type :table-view
-                       :column-resize-policy :constrained
-                       :columns (if (empty? (:target-data state))
-                                  [(column-factory :display)]
-                                  [(column-factory :id)
-                                   (column-factory :display)])
-                       :items (:source-data state)
-                       :selection-mode :multiple}]
-               ; target data
-               (seq (:target-data state))
-               (conj {:fx/type :table-view
-                      :column-resize-policy :constrained
-                      :columns [(column-factory :id)
-                                (column-factory :display)]
-                      :items (:target-data state)
-                      :selection-mode :multiple}))})
-
-; ---------------------------------------------------------------------------------------------- }}} -
 ; - root --------------------------------------------------------------------------------------- {{{ -
 
-(defn root-scene
+;; <a id="gui/root-view"></a>
+
+(defn- root-scene
+  "The root scene."
   [state]
   {:fx/type :scene
    :root {:fx/type :v-box
           :children [(buttons-view state)
                      (data-view state)]}})
 
-(defn root-view
+(defn- root-view
+  "The root stage."
   [state]
   {:fx/type :stage
    :showing true
@@ -101,9 +147,20 @@
 ; ============================================================================================== }}} =
 ; = handlers =================================================================================== {{{ =
 
+;; <a id="gui/handlers"></a>
+;; ## Functionality
+
+;; Wrappers provide a link between [screpl.core](#screpl.core) functions and the GUI. The [event handler](#gui/event-handler) reacts to user’s actions in the GUI and dispatches work to the appropriate wrappers, while simultaneously catching errors from [screpl.core](#screpl.core), allowing it to focus on the happy path.
+
+;; - [load-project](#gui/load-project)
+;; - [event-handler(#gui/event-handler)
+
 ; - load-project ------------------------------------------------------------------------------- {{{ -
 
-(defn load-project
+;; <a id="gui/load-project"></a>
+
+(defn- load-project
+  "Wrapper around `core/load-project`."
   [event]
   ; prepare a file chooser window
   (let [file-chooser  (FileChooser.)
@@ -114,15 +171,19 @@
     ; wait for file selection
     (when-let [selected-file (.showOpenDialog file-chooser window)]
       (let [project (core/load-project *sci-ctx* (.getAbsolutePath selected-file))]
-        (when-let [trg (:target-data project)]
-          (swap! *state assoc :target-data trg))
-        (swap! *state assoc :source-data (:source-data project))))))
+        (when (seq (:target-data project))
+          (swap! *state assoc :target-data (:target-data project)))
+        (swap! *state assoc :source-data (:source-data project))
+        (swap! *state assoc :sound-changes (:sound-changes project))))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
 ; - event-handler ------------------------------------------------------------------------------ {{{ -
 
-(defn event-handler
+;; <a id="gui/event-handler"></a>
+
+(defn- event-handler
+  "Reacts to user’s actions in the GUI and dispatches work to other functions. At the same time, catches errors and redirects them to `message`."
   [event]
   (try
     (case (:event/type event)
@@ -135,9 +196,19 @@
 ; ============================================================================================== }}} =
 ; = other ====================================================================================== {{{ =
 
+;; <a id="gui/other"></a>
+;; ## Other
+
+;; The more technical parts: managing the GUI, and displaying dialogs.
+
+;; - [message](#gui/message)
+;; - [renderer](#gui/renderer)
+
 ; - message ------------------------------------------------------------------------------------ {{{ -
 
-(defn message
+;; <a id="gui/message"></a>
+
+(defn- message
   "Displays a dialog with a message."
   [type          ; :error, :info, :ok, :quest
    & messages]   ; an Exception when :error, string(s) otherwise
@@ -157,6 +228,9 @@
 
 ; - renderer ----------------------------------------------------------------------------------- {{{ -
 
+;; <a id="gui/renderer"></a>
+
+;; dsxsdz
 (def renderer
   (fx/create-renderer
     :middleware (fx/wrap-map-desc root-view)
@@ -168,7 +242,7 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - start-gui ---------------------------------------------------------------------------------- {{{ -
 
-(defn start-gui
+(defn ^:export start-gui
   []
   ; (javafx.application.Platform/setImplicitExit true)
   ; (fx/on-fx-thread
@@ -177,7 +251,7 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - stop-gui ----------------------------------------------------------------------------------- {{{ -
 
-(defn stop-gui
+(defn ^:export stop-gui
   []
   ; (fx/on-fx-thread
   (fx/unmount-renderer *state renderer))
