@@ -61,14 +61,7 @@
 
 ;; <a id="gui/data-view"></a>
 
-(defn- cell-factory
-  "Makes a single cell for the list displaying sound changes."
-  [item]
-  {:fx/type :h-box
-   :children [{:fx/type :check-box
-               :selected true}
-              {:fx/type :label
-               :text "ddhjfl"}]})
+; - column-maker - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ -
 
 (defn- column-maker
   "Makes a single column for tables displaying source and target data."
@@ -76,13 +69,16 @@
   (case property
     :display {:fx/type :table-column
               :cell-value-factory property
-              :pref-width 150
+              :min-width 150
               :text "Display"} 
     :id      {:fx/type :table-column
               :cell-value-factory property
-              :pref-width 50
+              :min-width 50
               :text "ID"}
     (throw (ex-info "An error that shouldn't have happened in column-factory." {})))) 
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
+; - data-tooltip - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ -
 
 (defn- data-tooltip
   "Makes a tooltip for source and target datum's."
@@ -93,8 +89,11 @@
                         (map (fn [[k v]] (str (name k) ": " (pr-str v))))
                         (string/join "\n"))}})
 
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
+; - item-view - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
+
 (defn- item-view
-  "Makes a view for a singe sound change."
+  "Makes a view for a single sound change."
   [item]
   {:fx/type :h-box
    :padding 3
@@ -109,7 +108,18 @@
                :selected (:active? item)}
               {:fx/type :label
                :disable (-> item :active? not)
-               :text (-> item :fn meta :name str)}]})
+               :text (-> item :fn meta :name str)
+               :tooltip {:fx/type :tooltip
+                         :show-delay [333 :ms]
+                         :text (-> item :fn meta :doc)}}
+              {:fx/type :button
+               :text "▲"}
+              {:fx/type :button
+               :text "▼"}]})
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
+
+; - data-view - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
 
 (defn- data-view
   "Tables displaying sound changes and data."
@@ -120,8 +130,7 @@
    :children (cond-> [; sound changes
                       {:fx/type :scroll-pane
                        :content {:fx/type :v-box
-                                 :children (map item-view (:sound-changes state))}
-                       :pref-width 150}
+                                 :children (map item-view (:sound-changes state))}}
                       ; source-data
                       {:fx/type :table-view
                        :column-resize-policy :constrained
@@ -143,6 +152,8 @@
                       :row-factory {:fx/cell-type :table-row
                                     :describe data-tooltip}
                       :selection-mode :multiple}))})
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - dialog ------------------------------------------------------------------------------------- {{{ -
@@ -273,7 +284,7 @@
                         (:field data) (conj (str " in " (:field data))))]
              (fx/on-fx-thread
                (fx/create-component
-                 (dialog-view :error "Error" (str "Error" (apply str bits) ":\n" (:cause err))))))))
+                 (dialog-view :error "Error" (str "Error" (apply str bits) ": " (:cause err))))))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
