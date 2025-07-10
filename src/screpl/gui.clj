@@ -69,11 +69,11 @@
   (case property
     :display {:fx/type :table-column
               :cell-value-factory property
-              :min-width 150
+              :pref-width 150
               :text "Display"} 
     :id      {:fx/type :table-column
               :cell-value-factory property
-              :min-width 50
+              :pref-width 50
               :text "ID"}
     (throw (ex-info "An error that shouldn't have happened in column-factory." {})))) 
 
@@ -92,12 +92,21 @@
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 ; - item-view - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
 
+(defn- swap-elements
+  "Swaps two elements inside a collection. Also works on lazy sequences because `coll` is converted to a vector."
+  [coll i j]
+  (let [v (vec coll)]
+    (assoc v
+           i (nth v j)
+           j (nth v i))))
+
 (defn- item-view
   "Makes a view for a single sound change."
-  [item]
+  [index
+   item]
   {:fx/type :h-box
    :padding 3
-   :spacing 5
+   :spacing 6
    :children [{:fx/type :check-box
                :on-action (fn [_]
                             (swap! *state update :sound-changes
@@ -112,10 +121,21 @@
                :tooltip {:fx/type :tooltip
                          :show-delay [333 :ms]
                          :text (-> item :fn meta :doc)}}
-              {:fx/type :button
-               :text "▲"}
-              {:fx/type :button
-               :text "▼"}]})
+              {:fx/type :h-box
+               :scale-x 0.8
+               :scale-y 0.8
+               :children [{:fx/type :button
+                           :on-action (fn [_]
+                                        (swap! *state update :sound-changes
+                                               #(swap-elements % (dec index) index)))
+                           :text "▲"
+                           :visible (> index 0)}
+                          {:fx/type :button
+                           :on-action (fn [_]
+                                        (swap! *state update :sound-changes
+                                               #(swap-elements % index (inc index))))
+                           :text "▼"
+                           :visible (< index (dec (count (:sound-changes @*state))))}]}]})
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 
@@ -130,7 +150,8 @@
    :children (cond-> [; sound changes
                       {:fx/type :scroll-pane
                        :content {:fx/type :v-box
-                                 :children (map item-view (:sound-changes state))}}
+                                 :children (map-indexed item-view (:sound-changes state))}
+                       :min-width 150}
                       ; source-data
                       {:fx/type :table-view
                        :column-resize-policy :constrained
@@ -163,7 +184,6 @@
 (defn- dialog-view
   "A dialog to display errors etc."
   [type       ; :error
-   header     ; title text
    content]   ; main text
   {:fx/type :alert
    :alert-type type
@@ -171,7 +191,7 @@
    :on-close-request (fn [^DialogEvent e]
                        (when (nil? (.getResult ^Dialog (.getSource e)))
                          (.consume e)))
-   :header-text header
+   :header-text nil
    :content-text content
    :button-types [:ok]})
 
@@ -275,16 +295,17 @@
   [type          ; :error, :info, :ok, :quest
    & messages]   ; an Exception when :error, string(s) otherwise
   (case type
-    :error (let [err  (-> messages first Throwable->map)
-                 data (:data err)
-                 bits (cond-> []
-                        (:filename data) (conj (str " in " (:filename data)))
-                        (:index data) (conj (str " in item " (:index data)))
-                        (:display data) (conj (str " (" (:display data) ")"))
-                        (:field data) (conj (str " in " (:field data))))]
+    :error (let [err      (-> messages first Throwable->map)
+                 data     (:data err)
+                 location (cond-> []
+                            (:filename data) (conj (str " in " (:filename data)))
+                            (:index data)    (conj (str " in item " (:index data)))
+                            (:display data)  (conj (str " (" (:display data) ")"))
+                            (:field data)    (conj (str " in " (:field data))))]
+             (println data)
              (fx/on-fx-thread
                (fx/create-component
-                 (dialog-view :error "Error" (str "Error" (apply str bits) ": " (:cause err))))))))
+                 (dialog-view :error (str "Error" (apply str location) ":\n" (:cause err))))))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 

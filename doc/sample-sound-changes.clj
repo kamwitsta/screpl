@@ -1,4 +1,4 @@
-(defn fndhfsdfsdhfjlhdsfjk1
+(defn fn1
   "Sample sound change nr 1. Returns one word, with '1' appended to it."
   [x]
   [(update x :display #(str % "1"))])
