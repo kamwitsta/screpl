@@ -19,7 +19,7 @@
 ;; <a id="gui/globals"></a>
 ;; ## Global variables
 
-(declare message stop-gui)
+(declare message project-info stop-gui)
 
 (def ^:dynamic *sci-ctx*
  "Global variable, holds the context for SCI."
@@ -27,9 +27,10 @@
 
 (def ^:dynamic *state
   "Global variable, holds the state for the GUI."
-  (atom {:buttons [{:fx/type :button
+  (atom {:buttons [{:fx/type :button      ; this one must be the first; see load-project
+                    :on-action {:event/type :load-project}
                     :text "Load project"
-                    :on-action {:event/type :load-project}}]
+                    :tooltip {:fx/type :tooltip, :show-delay [333 :ms], :text "No project loaded."}}]
          :sound-changes []
          :source-data []}))
 
@@ -243,6 +244,7 @@
 ;; Wrappers provide a link between [screpl.core](#screpl.core) functions and the GUI. The [event handler](#gui/event-handler) reacts to user’s actions in the GUI and dispatches work to the appropriate wrappers, while simultaneously catching errors from [screpl.core](#screpl.core), allowing it to focus on the happy path.
 
 ;; - [load-project](#gui/load-project)
+;; - [project-info](#gui/project-info)
 ;; - [event-handler(#gui/event-handler)
 
 ; - load-project ------------------------------------------------------------------------------- {{{ -
@@ -262,20 +264,34 @@
     (when-let [selected-file (.showOpenDialog file-chooser window)]
       (let [project (core/load-project *sci-ctx* (.getAbsolutePath selected-file))]
         (when (seq (:target-data project))
-          (swap! *state assoc :target-data (:target-data project))
-          (let [^javafx.event.ActionEvent fx-event (:fx/event event)
-                source (.getSource fx-event) ; This is likely a Button
-                scene (.getScene ^javafx.scene.Node source)
-                window (.getWindow scene)]
-            (when (instance? javafx.stage.Stage window)
-              (.sizeToScene ^javafx.stage.Stage window))))
+          (swap! *state assoc :target-data (:target-data project)))
         (swap! *state assoc :source-data (:source-data project))
         (swap! *state assoc :sound-changes (map-indexed
                                              (fn [idx itm]
                                                (hash-map :active? true
                                                          :fn itm
                                                          :id idx))
-                                             (:sound-changes project)))))))
+                                             (:sound-changes project)))
+        (swap! *state assoc-in [:buttons 0 :tooltip :text] (project-info selected-file))))))
+
+; ---------------------------------------------------------------------------------------------- }}} -
+; - project-info ------------------------------------------------------------------------------- {{{ -
+
+;; <a id="gui/project-info"></a>
+
+(defn- project-info
+  "Displays basic information about the currently loaded project."
+  [filename]
+  (let [scs   (count (:sound-changes @*state))
+        src   (count (:source-data @*state))
+        trg   (count (:target-data @*state))]
+    (str "Project " filename ".\n"
+         "Contains:\n"
+         "  " scs " sound change functions,\n"
+         "  " src " source data items, and\n"
+         "  " (if (= 0 trg)
+                "no target data."
+                (str trg " target data items.")))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
