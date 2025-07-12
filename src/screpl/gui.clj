@@ -75,7 +75,7 @@
               :cell-value-factory property
               :pref-width 50
               :text "ID"}
-    (throw (ex-info "An error that shouldn't have happened in column-factory." {})))) 
+    (throw (ex-info "An error in column factory that shouldn't have happened." {})))) 
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 ; - data-tooltip - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ -
@@ -106,8 +106,33 @@
    item]
   {:fx/type :h-box
    :padding 3
-   :spacing 6
-   :children [{:fx/type :check-box
+   :spacing 9
+   :children [{:fx/type :h-box
+               :alignment :center-right
+               :spacing 1
+               :children [{:fx/type :button
+                           :on-action (fn [_]
+                                        (swap! *state update :sound-changes
+                                               #(swap-elements % (dec index) index)))
+                           :font 8
+                           :max-height 18
+                           :max-width 18
+                           :min-height 18
+                           :min-width 18
+                           :text "▲"
+                           :visible (> index 0)}
+                          {:fx/type :button
+                           :on-action (fn [_]
+                                        (swap! *state update :sound-changes
+                                               #(swap-elements % index (inc index))))
+                           :font 8
+                           :max-height 18
+                           :max-width 18
+                           :min-height 18
+                           :min-width 18
+                           :text "▼"
+                           :visible (< index (dec (count (:sound-changes @*state))))}]}
+              {:fx/type :check-box
                :on-action (fn [_]
                             (swap! *state update :sound-changes
                                    (partial map (fn [i]
@@ -120,22 +145,7 @@
                :text (-> item :fn meta :name str)
                :tooltip {:fx/type :tooltip
                          :show-delay [333 :ms]
-                         :text (-> item :fn meta :doc)}}
-              {:fx/type :h-box
-               :scale-x 0.8
-               :scale-y 0.8
-               :children [{:fx/type :button
-                           :on-action (fn [_]
-                                        (swap! *state update :sound-changes
-                                               #(swap-elements % (dec index) index)))
-                           :text "▲"
-                           :visible (> index 0)}
-                          {:fx/type :button
-                           :on-action (fn [_]
-                                        (swap! *state update :sound-changes
-                                               #(swap-elements % index (inc index))))
-                           :text "▼"
-                           :visible (< index (dec (count (:sound-changes @*state))))}]}]})
+                         :text (-> item :fn meta :doc)}}]})
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 
@@ -145,34 +155,39 @@
   "Tables displaying sound changes and data."
   [state]
   {:fx/type :h-box
-   :padding 10
-   :spacing 10
+   :padding 9
+   :spacing 9
    :children (cond-> [; sound changes
-                      {:fx/type :scroll-pane
-                       :content {:fx/type :v-box
-                                 :children (map-indexed item-view (:sound-changes state))}
-                       :min-width 150}
-                      ; source-data
-                      {:fx/type :table-view
-                       :column-resize-policy :constrained
-                       :columns (if (empty? (:target-data state))
-                                  [(column-maker :display)]
-                                  [(column-maker :id)
-                                   (column-maker :display)])
-                       :items (:source-data state)
-                       :row-factory {:fx/cell-type :table-row
-                                     :describe data-tooltip}
-                       :selection-mode :multiple}]
-               ; target data
-               (seq (:target-data state))
-               (conj {:fx/type :table-view
-                      :column-resize-policy :constrained
-                      :columns [(column-maker :id)
-                                (column-maker :display)]
-                      :items (:target-data state)
-                      :row-factory {:fx/cell-type :table-row
-                                    :describe data-tooltip}
-                      :selection-mode :multiple}))})
+                          {:fx/type :scroll-pane
+                           :content {:fx/type :v-box
+                                     :children (map-indexed item-view (:sound-changes state))}
+                           :h-box/hgrow :always
+                           :pref-width 200}
+                          ; source-data
+                          {:fx/type :table-view
+                           :column-resize-policy :constrained
+                           :columns (if (empty? (:target-data state))
+                                      [(column-maker :display)]
+                                      [(column-maker :id)
+                                       (column-maker :display)])
+                           :h-box/hgrow :always
+                           :items (:source-data state)
+                           :pref-width 200
+                           :row-factory {:fx/cell-type :table-row
+                                         :describe data-tooltip}
+                           :selection-mode :multiple}]
+              ; target data
+              (seq (:target-data state))
+              (conj {:fx/type :table-view
+                     :column-resize-policy :constrained
+                     :columns [(column-maker :id)
+                               (column-maker :display)]
+                     :h-box/hgrow :always
+                     :items (:target-data state)
+                     :pref-width 200
+                     :row-factory {:fx/cell-type :table-row
+                                   :describe data-tooltip}
+                     :selection-mode :multiple}))})
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 
@@ -212,10 +227,10 @@
   "The root stage."
   [state]
   {:fx/type :stage
-   :showing true
-   :title "SCRepl"
+   :on-close-request {:event/type :window-close}
    :scene (root-scene state)
-   :on-close-request {:event/type :window-close}})
+   :showing true
+   :title "SCRepl"})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
    
@@ -247,7 +262,13 @@
     (when-let [selected-file (.showOpenDialog file-chooser window)]
       (let [project (core/load-project *sci-ctx* (.getAbsolutePath selected-file))]
         (when (seq (:target-data project))
-          (swap! *state assoc :target-data (:target-data project)))
+          (swap! *state assoc :target-data (:target-data project))
+          (let [^javafx.event.ActionEvent fx-event (:fx/event event)
+                source (.getSource fx-event) ; This is likely a Button
+                scene (.getScene ^javafx.scene.Node source)
+                window (.getWindow scene)]
+            (when (instance? javafx.stage.Stage window)
+              (.sizeToScene ^javafx.stage.Stage window))))
         (swap! *state assoc :source-data (:source-data project))
         (swap! *state assoc :sound-changes (map-indexed
                                              (fn [idx itm]
