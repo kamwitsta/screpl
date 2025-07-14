@@ -7,6 +7,7 @@
 
 (ns screpl.gui
   (:require [cljfx.api :as fx]
+            [clojure.core.async :as async]
             [clojure.string :as string]
             [sci.core :as sci]
             [screpl.core :as core])
@@ -40,6 +41,8 @@
                                :disable true
                                :on-action {:event/type :print-tree}
                                :text "Print tree"}}
+         ; output
+         :output ""
          ; project
          :sound-changes []
          :source-data []
@@ -232,9 +235,9 @@
 (defn- output-view
   "Tables displaying sound changes and data."
   [state]
-  {:fx/type :h-box
-   :padding 9
-   :spacing 9})
+  {:fx/type :text-area
+   :editable false
+   :text (:output state)})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - root --------------------------------------------------------------------------------------- {{{ -
@@ -334,10 +337,23 @@
 (defn- print-tree
   "Wrapper around `core/grow-tree` and then `core/print-tree`."
   [event]
-  (let [fns  (->> @*state :sound-changes (filter :active?) (map :item))
-        val  (-> @*state :selection :source-data)
-        tree (core/grow-tree fns val)]
-    (println "a" tree)))
+  (let [fns       (->> @*state :sound-changes (filter :active?) (map :item))
+        val       (-> @*state :selection :source-data)
+        tree      (core/grow-tree fns val)
+        output-ch (async/chan)]
+    ; clean up
+    (swap! *state assoc :output "")
+    ; listen for updates
+    (async/go-loop
+      []
+      (when-let [output (async/<! output-ch)]
+        (println output)
+        (swap! *state update :output str output)
+        (recur)))
+    ; run `core/print-tree`
+    (async/go
+      (core/print-tree tree output-ch false)
+      (async/close! output-ch))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 

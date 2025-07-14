@@ -13,7 +13,8 @@
                  [clansi "1.0.0"]
                  [org.babashka/sci "0.9.45"]
                  ; gui
-                 [cljfx "1.9.5"]]
+                 [cljfx "1.9.5"]
+                 [org.clojure/core.async "1.8.741"]]
   :main ^:skip-aot screpl.main
   :target-path "target/%s"
   :profiles {:dev {:dependencies [[nrepl "1.3.1"]

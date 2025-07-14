@@ -13,6 +13,7 @@
 (ns screpl.core
   (:gen-class)
   (:require [clansi :as clansi]
+            [clojure.core.async :as async]
             [clojure.set :as set]
             [fast-edn.core :as edn]
             [malli.core :as m]
@@ -465,7 +466,7 @@
 (defn ^:export print-tree
   "Pretty prints a `screpl.core/Tree`."
   [^Tree tree       ; print this tree
-   output-fn        ; using this function
+   output-ch        ; put to this channel
    use-clansi]      ; coloured output?
   (let [tree'    ((:tree-fn tree))
         root     (first tree')
@@ -477,12 +478,12 @@
                     head-children (butlast children)
                     last-child    (last children)]      ; special case: different connector and prefix
                 ; print hte current node/leaf
-                (output-fn (str prefix
-                                connector
-                                (:display value)
-                                " "
-                                (if use-clansi (clansi/style fname :blue) fname)
-                                "\n"))
+                (async/>!! output-ch (str prefix
+                                          connector
+                                          (:display value)
+                                          " "
+                                          (if use-clansi (clansi/style fname :blue) fname)
+                                          "\n"))
                 ; repeat for all but last children
                 (doseq [child head-children]
                   (print-node child prefix' false))
@@ -490,10 +491,10 @@
                 (when last-child
                     (print-node last-child prefix' true))))]
       (when (seq tree')
-        (output-fn (str (:display root)                 ; print the root withouth any connector
-                        " "
-                        (if use-clansi (clansi/style fname :blue) fname)
-                        "\n"))
+        (async/>!! output-ch (str (:display root)       ; print the root withouth any connector
+                                  " "
+                                  (if use-clansi (clansi/style fname :blue) fname)
+                                  "\n"))
         (doseq [child (butlast children)]               ; print the immediate children except the last
           (print-node child "" false))
         (print-node (last children) "" true)))))        ; the last one has a different connector
