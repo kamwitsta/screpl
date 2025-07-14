@@ -31,15 +31,15 @@
 (def ^:dynamic *state
   "Global variable, holds the state for the GUI."
   (atom {;menu
-         :buttons [{:fx/type :button      ; this one must be the first; see "0" in load-project
-                    :on-action {:event/type :load-project}
-                    :text "Load project"
-                    :tooltip {:fx/type :tooltip, :show-delay [333 :ms], :text "No project loaded."}}
-                   {:fx/type :separator}
-                   {:fx/type :button
-                    :disable true
-                    :on-action {:event/type :print-tree}
-                    :text "Print tree"}]
+         :menu {:load-project {:fx/type :button
+                               :on-action {:event/type :load-project}
+                               :text "Load project"
+                               :tooltip {:fx/type :tooltip, :show-delay [333 :ms], :text "No project loaded."}}
+                :separator    {:fx/type :separator}
+                :print-tree   {:fx/type :button
+                               :disable true
+                               :on-action {:event/type :print-tree}
+                               :text "Print tree"}}
          ; project
          :sound-changes []
          :source-data []
@@ -69,7 +69,7 @@
   "A bar with buttons exposing core functions."
   [state]
   {:fx/type :tool-bar
-   :items (:buttons state)})
+   :items (-> state :menu vals)})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - data --------------------------------------------------------------------------------------- {{{ -
@@ -273,6 +273,7 @@
 
 ;; - [load-project](#gui/load-project)
 ;; - [project-info](#gui/project-info)
+;; - [print-tree](#gui/print-tree)
 ;; - [event-handler(#gui/event-handler)
 
 ; - load-project ------------------------------------------------------------------------------- {{{ -
@@ -301,9 +302,10 @@
         (swap! *state assoc :sound-changes (map-indexed
                                              (fn [idx itm]
                                                (hash-map :active? true
+                                                         :id idx
                                                          :item itm))
                                              (:sound-changes project)))
-        (swap! *state assoc-in [:buttons 0 :tooltip :text] (project-info selected-file))))))
+        (swap! *state assoc-in [:buttons :load-project :tooltip :text] (project-info selected-file))))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - project-info ------------------------------------------------------------------------------- {{{ -
@@ -325,6 +327,19 @@
                 (str trg " target data items.")))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
+; - print-tree --------------------------------------------------------------------------------- {{{ -
+
+;; <a id="gui/project-info"></a>
+
+(defn- print-tree
+  "Wrapper around `core/grow-tree` and then `core/print-tree`."
+  [event]
+  (let [fns  (->> @*state :sound-changes (filter :active?) (map :item))
+        val  (-> @*state :selection :source-data)
+        tree (core/grow-tree fns val)]
+    (println "a" tree)))
+
+; ---------------------------------------------------------------------------------------------- }}} -
 
 ; - event-handler ------------------------------------------------------------------------------ {{{ -
 
@@ -337,15 +352,16 @@
     (case (:event/type event)
       ; wrappers
       :load-project (load-project event)
+      :print-tree (print-tree event)
       ; selections
       ::select-source-datum
       (do
         (swap! *state assoc-in [:selection :source-data] (:fx/event event))
-        (println (:selection @*state)))
+        (if (nil? (-> @*state :selection :source-data))
+          (swap! *state assoc-in [:menu :print-tree :disable] true)
+          (swap! *state assoc-in [:menu :print-tree :disable] false)))
       ::select-target-datum
-      (do
-        (swap! *state assoc-in [:selection :target-data] (:fx/event event))
-        (println (:selection @*state)))
+      (swap! *state assoc-in [:selection :target-data] (:fx/event event))
       ; other
       :window-close (stop-gui))
     (catch Exception e (message :error e))))
