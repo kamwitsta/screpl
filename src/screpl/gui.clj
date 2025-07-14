@@ -21,6 +21,9 @@
 
 (declare message project-info stop-gui)
 
+;; The width of the views in [data-view](#gui/data-view).
+(def column-width 200)
+
 (def ^:dynamic *sci-ctx*
  "Global variable, holds the context for SCI."
  (sci/init {:namespaces {}}))
@@ -30,7 +33,8 @@
   (atom {:buttons [{:fx/type :button      ; this one must be the first; see load-project
                     :on-action {:event/type :load-project}
                     :text "Load project"
-                    :tooltip {:fx/type :tooltip, :show-delay [333 :ms], :text "No project loaded."}}]
+                    :tooltip {:fx/type :tooltip, :show-delay [333 :ms], :text "No project loaded."}}
+                   {:fx/type :separator}]
          :sound-changes []
          :source-data []}))
 
@@ -43,8 +47,9 @@
 ;; Functions that describe the look and behaviour of the GUI.
 
 ;; - [buttons](#gui/buttons-view)
-;; - [dialog](#gui/dialog-view)
 ;; - [data](#gui/data-view)
+;; - [dialog](#gui/dialog-view)
+;; - [output](#gui/output-view)
 ;; - [root](#gui/root-view)
 
 ; - buttons ------------------------------------------------------------------------------------ {{{ -
@@ -70,11 +75,11 @@
   (case property
     :display {:fx/type :table-column
               :cell-value-factory property
-              :pref-width 150
+              :pref-width (* column-width 3/4)
               :text "Display"} 
     :id      {:fx/type :table-column
               :cell-value-factory property
-              :pref-width 50
+              :pref-width (* column-width 1/4)
               :text "ID"}
     (throw (ex-info "An error in column factory that shouldn't have happened." {})))) 
 
@@ -155,40 +160,37 @@
 (defn- data-view
   "Tables displaying sound changes and data."
   [state]
-  {:fx/type :h-box
-   :padding 9
-   :spacing 9
-   :children (cond-> [; sound changes
-                          {:fx/type :scroll-pane
-                           :content {:fx/type :v-box
-                                     :children (map-indexed item-view (:sound-changes state))}
-                           :h-box/hgrow :always
-                           :pref-width 200}
-                          ; source-data
-                          {:fx/type :table-view
-                           :column-resize-policy :constrained
-                           :columns (if (empty? (:target-data state))
-                                      [(column-maker :display)]
-                                      [(column-maker :id)
-                                       (column-maker :display)])
-                           :h-box/hgrow :always
-                           :items (:source-data state)
-                           :pref-width 200
-                           :row-factory {:fx/cell-type :table-row
-                                         :describe data-tooltip}
-                           :selection-mode :multiple}]
-              ; target data
-              (seq (:target-data state))
-              (conj {:fx/type :table-view
-                     :column-resize-policy :constrained
-                     :columns [(column-maker :id)
-                               (column-maker :display)]
-                     :h-box/hgrow :always
-                     :items (:target-data state)
-                     :pref-width 200
-                     :row-factory {:fx/cell-type :table-row
-                                   :describe data-tooltip}
-                     :selection-mode :multiple}))})
+  (let [has-target-data? (seq (:target-data state))]
+    {:fx/type :split-pane
+     :divider-positions (if has-target-data? [0.333 0.666] [0.5])
+     :items (cond-> [; sound changes
+                     {:fx/type :scroll-pane
+                      :content {:fx/type :v-box
+                                :children (map-indexed item-view (:sound-changes state))}
+                      :pref-width column-width}
+                     ; source-data
+                     {:fx/type :table-view
+                      :column-resize-policy :constrained
+                      :columns (if has-target-data?
+                                 [(column-maker :id)
+                                  (column-maker :display)]
+                                 [(column-maker :display)])
+                      :items (:source-data state)
+                      :pref-width column-width
+                      :row-factory {:fx/cell-type :table-row
+                                    :describe data-tooltip}
+                      :selection-mode :multiple}]
+         ; target data
+             has-target-data?
+             (conj {:fx/type :table-view
+                    :column-resize-policy :constrained
+                    :columns [(column-maker :id)
+                              (column-maker :display)]
+                    :items (:target-data state)
+                    :pref-width column-width
+                    :row-factory {:fx/cell-type :table-row
+                                  :describe data-tooltip}
+                    :selection-mode :multiple}))}))
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 
@@ -212,6 +214,18 @@
    :button-types [:ok]})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
+; - output ------------------------------------------------------------------------------------- {{{ -
+
+;; <a id="gui/output-view"></a>
+
+(defn- output-view
+  "Tables displaying sound changes and data."
+  [state]
+  {:fx/type :h-box
+   :padding 9
+   :spacing 9})
+
+; ---------------------------------------------------------------------------------------------- }}} -
 ; - root --------------------------------------------------------------------------------------- {{{ -
 
 ;; <a id="gui/root-view"></a>
@@ -220,9 +234,11 @@
   "The root scene."
   [state]
   {:fx/type :scene
-   :root {:fx/type :v-box
-          :children [(buttons-view state)
-                     (data-view state)]}})
+   :root {:fx/type :split-pane
+          :orientation :vertical
+          :items [(buttons-view state)
+                  (output-view state)
+                  (data-view state)]}})
 
 (defn- root-view
   "The root stage."
@@ -231,7 +247,8 @@
    :on-close-request {:event/type :window-close}
    :scene (root-scene state)
    :showing true
-   :title "SCRepl"})
+   :title "SCRepl"
+   :width (* column-width 2)})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
    
@@ -264,7 +281,11 @@
     (when-let [selected-file (.showOpenDialog file-chooser window)]
       (let [project (core/load-project *sci-ctx* (.getAbsolutePath selected-file))]
         (when (seq (:target-data project))
-          (swap! *state assoc :target-data (:target-data project)))
+          (swap! *state assoc :target-data (:target-data project))
+          ; resize the window to include target data
+          (let [stage (-> event :fx/event .getSource .getScene .getWindow)]
+            (.setHeight stage (.getHeight stage))   ; seems redundant but is necessary
+            (.setWidth stage (+ column-width (.getWidth stage)))))
         (swap! *state assoc :source-data (:source-data project))
         (swap! *state assoc :sound-changes (map-indexed
                                              (fn [idx itm]
