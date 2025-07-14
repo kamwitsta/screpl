@@ -30,13 +30,22 @@
 
 (def ^:dynamic *state
   "Global variable, holds the state for the GUI."
-  (atom {:buttons [{:fx/type :button      ; this one must be the first; see load-project
+  (atom {;menu
+         :buttons [{:fx/type :button      ; this one must be the first; see "0" in load-project
                     :on-action {:event/type :load-project}
                     :text "Load project"
                     :tooltip {:fx/type :tooltip, :show-delay [333 :ms], :text "No project loaded."}}
-                   {:fx/type :separator}]
+                   {:fx/type :separator}
+                   {:fx/type :button
+                    :disable true
+                    :on-action {:event/type :print-tree}
+                    :text "Print tree"}]
+         ; project
          :sound-changes []
-         :source-data []}))
+         :source-data []
+         ; selections (handled by [event-handler](#gui/event-handler)
+         :selection {:source-data nil
+                     :target-data nil}}))
 
 ; ============================================================================================== }}} =
 ; = views ====================================================================================== {{{ =
@@ -111,47 +120,47 @@
   [index
    item]
   {:fx/type :h-box
-   :padding 3
-   :spacing 9
-   :children [{:fx/type :h-box
-               :alignment :center-right
-               :spacing 1
-               :children [{:fx/type :button
-                           :on-action (fn [_]
-                                        (swap! *state update :sound-changes
-                                               #(swap-elements % (dec index) index)))
-                           :font 8
-                           :max-height 18
-                           :max-width 18
-                           :min-height 18
-                           :min-width 18
-                           :text "▲"
-                           :visible (> index 0)}
-                          {:fx/type :button
-                           :on-action (fn [_]
-                                        (swap! *state update :sound-changes
-                                               #(swap-elements % index (inc index))))
-                           :font 8
-                           :max-height 18
-                           :max-width 18
-                           :min-height 18
-                           :min-width 18
-                           :text "▼"
-                           :visible (< index (dec (count (:sound-changes @*state))))}]}
-              {:fx/type :check-box
-               :on-action (fn [_]
-                            (swap! *state update :sound-changes
-                                   (partial map (fn [i]
-                                                  (cond-> i
-                                                    (= (:id i) (:id item))
-                                                    (update :active? not))))))
-               :selected (:active? item)}
-              {:fx/type :label
-               :disable (-> item :active? not)
-               :text (-> item :fn meta :name str)
-               :tooltip {:fx/type :tooltip
-                         :show-delay [333 :ms]
-                         :text (-> item :fn meta :doc)}}]})
+    :padding 3
+    :spacing 9
+    :children [{:fx/type :h-box
+                :alignment :center-right
+                :spacing 1
+                :children [{:fx/type :button
+                            :on-action (fn [_]
+                                         (swap! *state update :sound-changes
+                                                #(swap-elements % (dec index) index)))
+                            :font 8
+                            :max-height 18
+                            :max-width 18
+                            :min-height 18
+                            :min-width 18
+                            :text "▲"
+                            :visible (> index 0)}
+                           {:fx/type :button
+                            :on-action (fn [_]
+                                         (swap! *state update :sound-changes
+                                                #(swap-elements % index (inc index))))
+                            :font 8
+                            :max-height 18
+                            :max-width 18
+                            :min-height 18
+                            :min-width 18
+                            :text "▼"
+                            :visible (< index (dec (count (:sound-changes @*state))))}]}
+               {:fx/type :check-box
+                :on-action (fn [_]
+                             (swap! *state update :sound-changes
+                                    (partial map (fn [i]
+                                                   (cond-> i
+                                                     (= (:id i) (:id item))
+                                                     (update :active? not))))))
+                :selected (:active? item)}
+               {:fx/type :label
+                :disable (-> item :active? not)
+                :text (-> item :item meta :name str)
+                :tooltip {:fx/type :tooltip
+                          :show-delay [333 :ms]
+                          :text (-> item :item meta :doc)}}]})
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 
@@ -170,27 +179,29 @@
                       :pref-width column-width}
                      ; source-data
                      {:fx/type :table-view
-                      :column-resize-policy :constrained
+                      :column-resize-policy :constrained  ; don't show an extra column
                       :columns (if has-target-data?
                                  [(column-maker :id)
                                   (column-maker :display)]
                                  [(column-maker :display)])
                       :items (:source-data state)
+                      :on-selected-item-changed {:event/type ::select-source-datum}
                       :pref-width column-width
                       :row-factory {:fx/cell-type :table-row
                                     :describe data-tooltip}
-                      :selection-mode :multiple}]
+                      :selection-mode :single}]
          ; target data
              has-target-data?
              (conj {:fx/type :table-view
-                    :column-resize-policy :constrained
+                    :column-resize-policy :constrained  ; don't show an extra column
                     :columns [(column-maker :id)
                               (column-maker :display)]
                     :items (:target-data state)
+                    :on-selected-item-changed {:event/type ::select-target-datum}
                     :pref-width column-width
                     :row-factory {:fx/cell-type :table-row
                                   :describe data-tooltip}
-                    :selection-mode :multiple}))}))
+                    :selection-mode :single}))}))
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 
@@ -281,17 +292,16 @@
     (when-let [selected-file (.showOpenDialog file-chooser window)]
       (let [project (core/load-project *sci-ctx* (.getAbsolutePath selected-file))]
         (when (seq (:target-data project))
-          (swap! *state assoc :target-data (:target-data project))
           ; resize the window to include target data
           (let [stage (-> event :fx/event .getSource .getScene .getWindow)]
             (.setHeight stage (.getHeight stage))   ; seems redundant but is necessary
-            (.setWidth stage (+ column-width (.getWidth stage)))))
+            (.setWidth stage (+ column-width (.getWidth stage))))
+          (swap! *state assoc :target-data (:target-data project)))
         (swap! *state assoc :source-data (:source-data project))
         (swap! *state assoc :sound-changes (map-indexed
                                              (fn [idx itm]
                                                (hash-map :active? true
-                                                         :fn itm
-                                                         :id idx))
+                                                         :item itm))
                                              (:sound-changes project)))
         (swap! *state assoc-in [:buttons 0 :tooltip :text] (project-info selected-file))))))
 
@@ -309,7 +319,7 @@
     (str "Project " filename ".\n"
          "Contains:\n"
          "  " scs " sound change functions,\n"
-         "  " src " source data items, and\n"
+         "  " src " source data items,\n"
          "  " (if (= 0 trg)
                 "no target data."
                 (str trg " target data items.")))))
@@ -325,7 +335,18 @@
   [event]
   (try
     (case (:event/type event)
+      ; wrappers
       :load-project (load-project event)
+      ; selections
+      ::select-source-datum
+      (do
+        (swap! *state assoc-in [:selection :source-data] (:fx/event event))
+        (println (:selection @*state)))
+      ::select-target-datum
+      (do
+        (swap! *state assoc-in [:selection :target-data] (:fx/event event))
+        (println (:selection @*state)))
+      ; other
       :window-close (stop-gui))
     (catch Exception e (message :error e))))
 
