@@ -22,6 +22,7 @@
             [sci.core :as sci])
   (:import  [java.util.concurrent ForkJoinPool]))
 
+
 ; = general ================================================================================== {{{ =
 
 ;; <a id="core/general"></a>
@@ -269,13 +270,12 @@
 
 (defn load-scs
   "Reads, evals, and validates sound changes. Returns a vector of functions."
-  [ctx          ; eval in this context
-   project]     ; get scs from this
+  [project]     ; get scs from this
   (->> project
       :sound-changes
       (attach-to-path (:project-file project))
       (slurp)
-      (sci/eval-string* ctx)
+      (sci/eval-string)
       (map-indexed (fn [idx itm]
                      (try
                        (m/assert SCItem itm)
@@ -293,12 +293,11 @@
 
 (defn load-projectfile
   "Reads, evals, and validates a project file. Returns the hash map returned by the project file + `:project-file` containing the path to the project file."
-  [ctx          ; eval in this context
-   filename]
+  [filename]
   (try
     (->> filename
          (slurp)
-         (sci/eval-string* ctx)
+         (sci/eval-string)
          (m/assert ProjectFile)
          (merge {:project-file filename}))
     ; probably either sci or malli
@@ -325,10 +324,9 @@
 
 (defn ^:export load-project
   "Load an entire project based on a project file."
-  [ctx          ; sci context
-   filename]    ; a project file
-  (let [project (load-projectfile ctx filename)
-        scs     (load-scs ctx project)
+  [filename]    ; a project file
+  (let [project (load-projectfile filename)
+        scs     (load-scs project)
         data    (load-data project)]
     (merge data {:project-file filename     ; data might be both source and target or just source
                  :sound-changes scs})))
@@ -466,23 +464,28 @@
 (defn ^:export print-tree
   "Pretty prints a `screpl.core/Tree`."
   [^Tree tree       ; print this tree
-   output-ch        ; put to this channel
-   use-clansi]      ; coloured output?
+   output-ch        ; put output to this channel
+   progress-ch]     ; put progress to this channel
   (let [tree'    ((:tree-fn tree))
         root     (first tree')
         fname    (second tree')
-        children (drop 2 tree')]
+        children (drop 2 tree')
+        progress (atom 1)]
     (letfn [(print-node [[value fname & children] prefix last?]
               (let [connector     (if last? "└─ " "├─ ")
                     prefix'       (str prefix (if last? "   " "│  "))   ; accumulates the indent level
                     head-children (butlast children)
                     last-child    (last children)]      ; special case: different connector and prefix
+                ; report progress
+                (Thread/sleep 500)
+                (swap! progress inc)
+                (async/>!! progress-ch @progress)
                 ; print hte current node/leaf
                 (async/>!! output-ch (str prefix
                                           connector
                                           (:display value)
                                           " "
-                                          (if use-clansi (clansi/style fname :blue) fname)
+                                          fname
                                           "\n"))
                 ; repeat for all but last children
                 (doseq [child head-children]
@@ -491,13 +494,15 @@
                 (when last-child
                     (print-node last-child prefix' true))))]
       (when (seq tree')
-        (async/>!! output-ch (str (:display root)       ; print the root withouth any connector
-                                  " "
-                                  (if use-clansi (clansi/style fname :blue) fname)
-                                  "\n"))
-        (doseq [child (butlast children)]               ; print the immediate children except the last
+        ; report progress
+        (async/>!! progress-ch @progress)
+        ; print the root withouth any connector
+        (async/>!! output-ch (str (:display root) " " fname "\n"))
+        ; print the immediate children except the last
+        (doseq [child (butlast children)]
           (print-node child "" false))
-        (print-node (last children) "" true)))))        ; the last one has a different connector
+        ; the last child has a different connector
+        (print-node (last children) "" true)))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 

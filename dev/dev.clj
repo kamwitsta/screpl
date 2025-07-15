@@ -7,12 +7,10 @@
             ; [screpl.a :refer [start-gui stop-gui]]))
             [screpl.gui :refer [start-gui stop-gui]]))
 
-(stop-gui)
-(refresh)
+; (stop-gui)
+; (refresh)
 (start-gui)
-(gui/load-project nil)
 
-(comment
-  run this inside lein repl if it says it can't find stop-gui
-  (require '[clojure.tools.namespace.repl :refer [refresh]]) (refresh))
-; {:event/type :load-project, :fx/event #object[javafx.event.ActionEvent 0x1a2b30fd javafx.event.ActionEvent[source=Button@5e74a3ca[styleClass=button]'Load project']]}
+; run this inside lein repl if it says it can't find stop-gui
+; (require '[clojure.tools.namespace.repl :refer [refresh]]) (refresh)
+; (require '[cljfx.dev :refer [help-ui]]) (help-ui)

@@ -9,10 +9,8 @@
   (:require [cljfx.api :as fx]
             [clojure.core.async :as async]
             [clojure.string :as string]
-            [sci.core :as sci]
             [screpl.core :as core])
-  (:import [javafx.scene.control Dialog DialogEvent]
-           [javafx.stage FileChooser FileChooser$ExtensionFilter]))
+  (:import [javafx.stage FileChooser FileChooser$ExtensionFilter]))
 
 
 ; = globals ==================================================================================== {{{ =
@@ -25,13 +23,11 @@
 ;; The width of the views in [data-view](#gui/data-view).
 (def column-width 200)
 
-(def ^:dynamic *sci-ctx*
- "Global variable, holds the context for SCI."
- (sci/init {:namespaces {}}))
-
 (def ^:dynamic *state
   "Global variable, holds the state for the GUI."
-  (atom {;menu
+  (atom {;dialog
+         :dialog nil
+         ;menu
          :menu {:load-project {:fx/type :button
                                :on-action {:event/type :load-project}
                                :text "Load project"
@@ -215,17 +211,31 @@
 
 (defn- dialog-view
   "A dialog to display errors etc."
-  [type       ; :error
-   content]   ; main text
-  {:fx/type :alert
-   :alert-type type
-   :showing true
-   :on-close-request (fn [^DialogEvent e]
-                       (when (nil? (.getResult ^Dialog (.getSource e)))
-                         (.consume e)))
-   :header-text nil
-   :content-text content
-   :button-types [:ok]})
+  [state]
+  (case (-> state :dialog :type)
+    :error
+    {:fx/type :alert
+     :alert-type :error
+     :button-types [:ok]
+     :content-text (-> state :dialog :content-text)
+     :header-text nil
+     :on-close-request #(swap! *state assoc :dialog nil)
+     :showing (-> state :dialog some?)}
+    
+    :progress-indef
+    {:fx/type :alert
+     :alert-type :information
+     :dialog-pane {:fx/type :dialog-pane
+                   ; :button-types [:cancel]
+                   :children [{:fx/type :h-box
+                               :alignment :top-center
+                               :children [{:fx/type :label
+                                           :text "dl"}
+                                          {:fx/type :progress-indicator}
+                                          {:fx/type :button
+                                           :text "Cancel"}]}]}
+     :on-close-request #(swap! *state assoc :dialog nil)
+     :showing (-> state :dialog some?)}))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - output ------------------------------------------------------------------------------------- {{{ -
@@ -259,12 +269,14 @@
 (defn- root-view
   "The root stage."
   [state]
-  {:fx/type :stage
-   :on-close-request {:event/type :window-close}
-   :scene (root-scene state)
-   :showing true
-   :title "SCRepl"
-   :width (* column-width 2)})
+  {:fx/type fx/ext-many
+   :desc [{:fx/type :stage
+           :on-close-request {:event/type :window-close}
+           :scene (root-scene state)
+           :showing true
+           :title "SCRepl"
+           :width (* column-width 2)}
+          (dialog-view state)]})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
    
@@ -296,8 +308,8 @@
               ; (FileChooser$ExtensionFilter. "All files (*.*)" ["*.*"])])
     ; wait for file selection
     ; (when-let [selected-file (.showOpenDialog file-chooser window)]
-      ; (let [project (core/load-project *sci-ctx* (.getAbsolutePath selected-file))])
-  (let [project (core/load-project *sci-ctx* "/home/kamil/devel/clj/screpl/doc/sample-project.clj")]
+      ; (let [project (core/load-project (.getAbsolutePath selected-file))]
+  (let [project (core/load-project "/home/kamil/screpl/doc/sample-project.clj")]
     (when (seq (:target-data project))
       ; resize the window to include target data
       (let [stage (-> event :fx/event .getSource .getScene .getWindow)]
@@ -339,24 +351,32 @@
 
 (defn- print-tree
   "Wrapper around `core/grow-tree` and then `core/print-tree`."
-  [event]
-  (let [fns       (->> @*state :sound-changes (filter :active?) (map :item))
-        val       (-> @*state :selection :source-data)
-        tree      (core/grow-tree fns val)
-        output-ch (async/chan)]
+  [_]
+  (let [fns         (->> @*state :sound-changes (filter :active?) (map :item))
+        val         (-> @*state :selection :source-data)
+        tree        (core/grow-tree fns val)
+        output-ch   (async/chan 12)  ; 12 just so the gui doesn't make `core` wait
+        progress-ch (async/chan 12)]
     ; clean up
     (swap! *state assoc :output "")
-    ; listen for updates
+    ; listen for output
     (async/go-loop
       []
       (when-let [output (async/<! output-ch)]
-        (println output)
         (swap! *state update :output str output)
+        (recur)))
+    ; listen for progress
+    (async/go-loop
+      []
+      (when-let [progress (async/<! progress-ch)]
+        (println progress)
         (recur)))
     ; run `core/print-tree`
     (async/go
-      (core/print-tree tree output-ch false)
-      (async/close! output-ch))))
+      (message :progress-indef)
+      (core/print-tree tree output-ch progress-ch)
+      (async/close! output-ch)
+      (async/close! progress-ch))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
@@ -370,7 +390,7 @@
   (try
     (case (:event/type event)
       ; wrappers
-      :load-project (do (println event) (load-project event))
+      :load-project (load-project event)
       :print-tree (print-tree event)
       ; selections
       ::select-source-datum
@@ -406,20 +426,24 @@
 
 (defn- message
   "Displays a dialog with a message."
-  [type          ; :error, :info, :ok, :quest
-   & messages]   ; an Exception when :error, string(s) otherwise
+  [type          ; :error, :progress-indef
+   & messages]   ; an Exception when :error, string(s) or number(s) otherwise
   (case type
-    :error (let [err      (-> messages first Throwable->map)
-                 data     (:data err)
-                 location (cond-> []
-                            (:filename data) (conj (str " in " (:filename data)))
-                            (:index data)    (conj (str " in item " (:index data)))
-                            (:display data)  (conj (str " (" (:display data) ")"))
-                            (:field data)    (conj (str " in " (:field data))))]
-             (println data)
-             (fx/on-fx-thread
-               (fx/create-component
-                 (dialog-view :error (str "Error" (apply str location) ":\n" (:cause err))))))))
+    :error
+    (let [err      (-> messages first Throwable->map)
+          data     (:data err)
+          location (cond-> []
+                     (:filename data) (conj (str " in " (:filename data)))
+                     (:index data)    (conj (str " in item " (:index data)))
+                     (:display data)  (conj (str " (" (:display data) ")"))
+                     (:field data)    (conj (str " in " (:field data))))]
+      (swap! @*state assoc :dialog
+             {:type :error
+              :content-text (str "Error" (apply str location) ":\n" (:cause err))}))
+
+    :progress-indef
+    (swap! @*state assoc :dialog
+        {:type :progress-indef})))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
@@ -459,6 +483,7 @@
   []
   ; (fx/on-fx-thread
   (fx/unmount-renderer *state renderer))
+  ; (System/exit 0))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
