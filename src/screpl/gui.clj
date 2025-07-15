@@ -373,8 +373,8 @@
         (recur)))
     ; run `core/print-tree`
     (async/go
-      (message :progress-indef)
       (core/print-tree tree output-ch progress-ch)
+      (message :progress-indef)
       (async/close! output-ch)
       (async/close! progress-ch))))
 
@@ -429,21 +429,18 @@
   [type          ; :error, :progress-indef
    & messages]   ; an Exception when :error, string(s) or number(s) otherwise
   (case type
-    :error
-    (let [err      (-> messages first Throwable->map)
-          data     (:data err)
-          location (cond-> []
-                     (:filename data) (conj (str " in " (:filename data)))
-                     (:index data)    (conj (str " in item " (:index data)))
-                     (:display data)  (conj (str " (" (:display data) ")"))
-                     (:field data)    (conj (str " in " (:field data))))]
-      (swap! @*state assoc :dialog
-             {:type :error
-              :content-text (str "Error" (apply str location) ":\n" (:cause err))}))
-
-    :progress-indef
-    (swap! @*state assoc :dialog
-        {:type :progress-indef})))
+    :error         (let [err      (-> messages first Throwable->map)
+                         data     (:data err)
+                         location (cond-> []
+                                    (:filename data) (conj (str " in " (:filename data)))
+                                    (:index data)    (conj (str " in item " (:index data)))
+                                    (:display data)  (conj (str " (" (:display data) ")"))
+                                    (:field data)    (conj (str " in " (:field data))))]
+                     (swap! @*state assoc :dialog
+                            {:type :error
+                             :content-text (str "Error" (apply str location) ":\n" (:cause err))}))
+    :progress-indef (swap! @*state assoc :dialog
+                       {:type :progress-indef})))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
