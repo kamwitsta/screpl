@@ -237,6 +237,7 @@
   [state]
   {:fx/type :text-area
    :editable false
+   :style {:-fx-font-family "monospace"}
    :text (:output state)})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -249,6 +250,7 @@
   [state]
   {:fx/type :scene
    :root {:fx/type :split-pane
+          :divider-positions [0.1 0.5]
           :orientation :vertical
           :items [(buttons-view state)
                   (output-view state)
@@ -287,28 +289,29 @@
   "Wrapper around `core/load-project`."
   [event]
   ; prepare a file chooser window
-  (let [file-chooser  (FileChooser.)
-        window        (-> event :fx/event .getSource .getScene .getWindow)] 
-    (.addAll (.getExtensionFilters file-chooser)
-             [(FileChooser$ExtensionFilter. "Clojure files (*.clj)" ["*.clj"])
-              (FileChooser$ExtensionFilter. "All files (*.*)" ["*.*"])])
+  ; (let [file-chooser  (FileChooser.)
+        ; window        (-> event :fx/event .getSource .getScene .getWindow)] 
+    ; (.addAll (.getExtensionFilters file-chooser)
+             ; [(FileChooser$ExtensionFilter. "Clojure files (*.clj)" ["*.clj"])
+              ; (FileChooser$ExtensionFilter. "All files (*.*)" ["*.*"])])
     ; wait for file selection
-    (when-let [selected-file (.showOpenDialog file-chooser window)]
-      (let [project (core/load-project *sci-ctx* (.getAbsolutePath selected-file))]
-        (when (seq (:target-data project))
-          ; resize the window to include target data
-          (let [stage (-> event :fx/event .getSource .getScene .getWindow)]
-            (.setHeight stage (.getHeight stage))   ; seems redundant but is necessary
-            (.setWidth stage (+ column-width (.getWidth stage))))
-          (swap! *state assoc :target-data (:target-data project)))
-        (swap! *state assoc :source-data (:source-data project))
-        (swap! *state assoc :sound-changes (map-indexed
-                                             (fn [idx itm]
-                                               (hash-map :active? true
-                                                         :id idx
-                                                         :item itm))
-                                             (:sound-changes project)))
-        (swap! *state assoc-in [:buttons :load-project :tooltip :text] (project-info selected-file))))))
+    ; (when-let [selected-file (.showOpenDialog file-chooser window)]
+      ; (let [project (core/load-project *sci-ctx* (.getAbsolutePath selected-file))])
+  (let [project (core/load-project *sci-ctx* "/home/kamil/devel/clj/screpl/doc/sample-project.clj")]
+    (when (seq (:target-data project))
+      ; resize the window to include target data
+      (let [stage (-> event :fx/event .getSource .getScene .getWindow)]
+        (.setHeight stage (.getHeight stage))   ; seems redundant but is necessary
+        (.setWidth stage (+ column-width (.getWidth stage))))
+      (swap! *state assoc :target-data (:target-data project)))
+    (swap! *state assoc :source-data (:source-data project))
+    (swap! *state assoc :sound-changes (map-indexed
+                                         (fn [idx itm]
+                                           (hash-map :active? true
+                                                     :id idx
+                                                     :item itm))
+                                         (:sound-changes project)))))
+    ; (swap! *state assoc-in [:buttons :load-project :tooltip :text] (project-info selected-file))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - project-info ------------------------------------------------------------------------------- {{{ -
@@ -367,7 +370,7 @@
   (try
     (case (:event/type event)
       ; wrappers
-      :load-project (load-project event)
+      :load-project (do (println event) (load-project event))
       :print-tree (print-tree event)
       ; selections
       ::select-source-datum
