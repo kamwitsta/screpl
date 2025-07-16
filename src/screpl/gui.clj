@@ -216,7 +216,6 @@
   "A dialog to display errors etc."
   [state]
   (when-let [dialog (:dialog state)]
-    (println "dialog state:" dialog)
     (case (:type dialog)
       :error
       {:fx/type :alert
@@ -364,7 +363,6 @@
         output-ch   (async/chan 12)  ; 12 just so the gui doesn't make `core` wait
         progress-ch (async/chan 12)]
     ; prepare
-    (println 1)
     (message :progress-indet)
     (swap! *state assoc :output "")
     ; listen for output
@@ -381,7 +379,7 @@
         (recur)))
     ; run `core/print-tree`
     (async/go
-      (core/print-tree tree output-ch progress-ch)
+      (core/print-tree tree cancel-ch output-ch progress-ch)
       (async/close! output-ch)
       (async/close! progress-ch)
       (swap! *state assoc :dialog nil))))
@@ -413,7 +411,7 @@
       (swap! *state assoc-in [:selection :target-data] (:fx/event event))
 
       ; other
-      :cancel-operation (async/>!! cancel-ch true)
+      :cancel-operation (async/>!! cancel-ch :cancel)
       :dialog-close (swap! *state assoc :dialog nil)
       :window-close (stop-gui))
     (catch Exception e (message :error e))))
