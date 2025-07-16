@@ -464,8 +464,8 @@
 (defn ^:export print-tree
   "Pretty prints a `screpl.core/Tree`."
   [^Tree tree       ; print this tree
-   output-ch        ; put output to this channel
-   progress-ch]     ; put progress to this channel
+   output-ch        ; put output on this channel
+   progress-ch]     ; put progress on this channel
   (let [tree'    ((:tree-fn tree))
         root     (first tree')
         fname    (second tree')
@@ -476,10 +476,6 @@
                     prefix'       (str prefix (if last? "   " "│  "))   ; accumulates the indent level
                     head-children (butlast children)
                     last-child    (last children)]      ; special case: different connector and prefix
-                ; report progress
-                (Thread/sleep 500)
-                (swap! progress inc)
-                (async/>!! progress-ch @progress)
                 ; print hte current node/leaf
                 (async/>!! output-ch (str prefix
                                           connector
@@ -487,6 +483,10 @@
                                           " "
                                           fname
                                           "\n"))
+                ; report progress
+                (Thread/sleep 500)
+                (swap! progress inc)
+                (async/>!! progress-ch @progress)
                 ; repeat for all but last children
                 (doseq [child head-children]
                   (print-node child prefix' false))
@@ -494,10 +494,10 @@
                 (when last-child
                     (print-node last-child prefix' true))))]
       (when (seq tree')
-        ; report progress
-        (async/>!! progress-ch @progress)
         ; print the root withouth any connector
         (async/>!! output-ch (str (:display root) " " fname "\n"))
+        ; report progress
+        (async/>!! progress-ch @progress)
         ; print the immediate children except the last
         (doseq [child (butlast children)]
           (print-node child "" false))

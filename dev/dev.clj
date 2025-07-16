@@ -4,11 +4,10 @@
 
 (ns dev
   (:require [clojure.tools.namespace.repl :refer [refresh]]
-            ; [screpl.a :refer [start-gui stop-gui]]))
             [screpl.gui :refer [start-gui stop-gui]]))
 
 ; (stop-gui)
-; (refresh)
+(refresh)
 (start-gui)
 
 ; run this inside lein repl if it says it can't find stop-gui
