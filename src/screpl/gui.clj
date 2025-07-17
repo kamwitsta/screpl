@@ -216,6 +216,7 @@
   "A dialog to display errors etc."
   [state]
   (when-let [dialog (:dialog state)]
+    (println (:dialog state))
     (case (:type dialog)
       :error
       {:fx/type :alert
@@ -313,7 +314,8 @@
     ; wait for file selection
     ; (when-let [selected-file (.showOpenDialog file-chooser window)]
       ; (let [project (core/load-project (.getAbsolutePath selected-file))]
-  (let [project (core/load-project "/home/kamil/screpl/doc/sample-project.clj")]
+  ; (let [project (core/load-project "/home/kamil/screpl/doc/sample-project.clj")])
+  (let [project (core/load-project "/home/kamil/devel/clj/screpl/doc/sample-project.clj")]
     (when (seq (:target-data project))
       ; resize the window to include target data
       (when (empty? (:target-data @*state))
@@ -360,28 +362,32 @@
   (let [fns         (->> @*state :sound-changes (filter :active?) (map :item))
         val         (-> @*state :selection :source-data)
         tree        (core/grow-tree fns val)
-        output-ch   (async/chan 12)  ; 12 just so the gui doesn't make `core` wait
-        progress-ch (async/chan 12)]
+        output-ch   (async/chan)
+        progress-ch (async/chan)
+        terminate?  (atom false)]    ; to kill the go-loops
     ; prepare
     (message :progress-indet)
     (swap! *state assoc :output "")
     ; listen for output
     (async/go-loop
       []
-      (when-let [output (async/<! output-ch)]
-        (swap! *state update :output str output)
-        (recur)))
+      (when (not @terminate?)
+        (when-let [output (async/<! output-ch)]
+          (swap! *state update :output str output)
+          (recur))))
     ; listen for progress
     (async/go-loop
       []
-      (when-let [progress (async/<! progress-ch)]
-        (swap! *state assoc-in [:dialog :message] (str "Printed " progress " lines..."))
-        (recur)))
+      (when (not @terminate?)
+        (when-let [progress (async/<! progress-ch)]
+            (swap! *state assoc-in [:dialog :message] (str "Printed " progress " lines..."))
+            (recur))))
     ; run `core/print-tree`
     (async/go
       (core/print-tree tree cancel-ch output-ch progress-ch)
       (async/close! output-ch)
       (async/close! progress-ch)
+      (reset! terminate? true)
       (swap! *state assoc :dialog nil))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -478,8 +484,6 @@
 (defn ^:export start-gui
   "Start the GUI"
   []
-  ; (javafx.application.Platform/setImplicitExit true)
-  ; (fx/on-fx-thread
   (fx/mount-renderer *state renderer))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -490,7 +494,7 @@
 (defn ^:export stop-gui
   "Stop the GUI."
   []
-  ; (fx/on-fx-thread
+  (async/close! cancel-ch)
   (fx/unmount-renderer *state renderer))
   ; (System/exit 0))
 

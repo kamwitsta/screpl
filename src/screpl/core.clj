@@ -467,38 +467,37 @@
    cancel-ch        ; listen to this
    output-ch        ; put output on this channel
    progress-ch]     ; put progress on this channel
-  (let [tree'    ((:tree-fn tree))
-        root     (first tree')
-        fname    (second tree')
-        children (drop 2 tree')
-        progress (atom 1)]
+  (let [tree'      ((:tree-fn tree))
+        root       (first tree')
+        fname      (second tree')
+        children   (drop 2 tree')
+        cancelled? (atom false)
+        progress   (atom 1)]
     (letfn [(print-node [[value fname & children] prefix last?]
-              (let [connector     (if last? "└─ " "├─ ")
-                    prefix'       (str prefix (if last? "   " "│  "))   ; accumulates the indent level
-                    head-children (butlast children)
-                    last-child    (last children)]      ; special case: different connector and prefix
-                ; print hte current node/leaf
-                (async/>!! output-ch (str prefix
-                                          connector
-                                          (:display value)
-                                          " "
-                                          fname
-                                          "\n"))
-                ; report progress
-                (Thread/sleep 1000)
-                (swap! progress inc)
-                (async/>!! progress-ch @progress)
-                ; check if cancel message came in
-                (let [[val _] (async/alts!! [cancel-ch (async/timeout 10)])]
-                  (println val)
-                  (when (nil? val)
-                    (do
-                      ; repeat for all but last children
-                      (doseq [child head-children]
-                        (print-node child prefix' false))
-                      ; repeat for the last child (needs a different connector)
-                      (when last-child
-                          (print-node last-child prefix' true)))))))]
+              ; check for cancellation message
+              (when (some? (async/poll! cancel-ch))
+                (reset! cancelled? true))
+              (if (not @cancelled?)
+                (let [connector     (if last? "└─ " "├─ ")
+                      prefix'       (str prefix (if last? "   " "│  "))   ; accumulates the indent level
+                      head-children (butlast children)
+                      last-child    (last children)]      ; special case: different connector and prefix
+                  ; print hte current node/leaf
+                  (async/>!! output-ch (str prefix
+                                            connector
+                                            (:display value)
+                                            " "
+                                            fname
+                                            "\n"))
+                  ; report progress
+                  (swap! progress inc)
+                  (async/>!! progress-ch @progress)
+                  ; repeat for all but last children
+                  (doseq [child head-children]
+                    (print-node child prefix' false))
+                  ; repeat for the last child (needs a different connector)
+                  (when last-child
+                      (print-node last-child prefix' true)))))]
       (when (seq tree')
         ; print the root withouth any connector
         (async/>!! output-ch (str (:display root) " " fname "\n"))
