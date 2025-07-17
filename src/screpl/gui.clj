@@ -216,7 +216,6 @@
   "A dialog to display errors etc."
   [state]
   (when-let [dialog (:dialog state)]
-    (println (:dialog state))
     (case (:type dialog)
       :error
       {:fx/type :alert
@@ -362,8 +361,8 @@
   (let [fns         (->> @*state :sound-changes (filter :active?) (map :item))
         val         (-> @*state :selection :source-data)
         tree        (core/grow-tree fns val)
-        output-ch   (async/chan)
-        progress-ch (async/chan)
+        output-ch   (async/chan 12)
+        progress-ch (async/chan 12)
         terminate?  (atom false)]    ; to kill the go-loops
     ; prepare
     (message :progress-indet)
@@ -371,24 +370,26 @@
     ; listen for output
     (async/go-loop
       []
-      (when (not @terminate?)
-        (when-let [output (async/<! output-ch)]
-          (swap! *state update :output str output)
-          (recur))))
+      (when-let [output (async/<! output-ch)]
+        (when (not @terminate?)
+          (swap! *state update :output str output))
+        (recur)))
     ; listen for progress
     (async/go-loop
       []
-      (when (not @terminate?)
-        (when-let [progress (async/<! progress-ch)]
-            (swap! *state assoc-in [:dialog :message] (str "Printed " progress " lines..."))
-            (recur))))
+      (when-let [progress (async/<! progress-ch)]
+        (when (not @terminate?)
+          (swap! *state assoc-in [:dialog :message] (str "Printed " progress " lines...")))
+        (recur)))
     ; run `core/print-tree`
     (async/go
-      (core/print-tree tree cancel-ch output-ch progress-ch)
-      (async/close! output-ch)
-      (async/close! progress-ch)
-      (reset! terminate? true)
-      (swap! *state assoc :dialog nil))))
+      (try
+        (core/print-tree tree cancel-ch output-ch progress-ch)
+        (finally
+          (reset! terminate? true)
+          (async/close! output-ch)
+          (async/close! progress-ch)
+          (swap! *state assoc :dialog nil))))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 

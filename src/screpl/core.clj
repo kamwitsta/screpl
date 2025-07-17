@@ -474,15 +474,16 @@
         cancelled? (atom false)
         progress   (atom 1)]
     (letfn [(print-node [[value fname & children] prefix last?]
+              (Thread/sleep 100)
               ; check for cancellation message
               (when (some? (async/poll! cancel-ch))
                 (reset! cancelled? true))
-              (if (not @cancelled?)
+              (when (not @cancelled?)
                 (let [connector     (if last? "└─ " "├─ ")
                       prefix'       (str prefix (if last? "   " "│  "))   ; accumulates the indent level
                       head-children (butlast children)
                       last-child    (last children)]      ; special case: different connector and prefix
-                  ; print hte current node/leaf
+                  ; print the current node/leaf
                   (async/>!! output-ch (str prefix
                                             connector
                                             (:display value)
