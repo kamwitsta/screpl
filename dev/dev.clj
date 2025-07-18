@@ -11,5 +11,6 @@
 (start-gui)
 
 ; run this inside lein repl if it says it can't find stop-gui
+; also works: changing something in a source file, saving, changing back, saving
 ; (require '[clojure.tools.namespace.repl :refer [refresh]]) (refresh)
 ; (require '[cljfx.dev :refer [help-ui]]) (help-ui)

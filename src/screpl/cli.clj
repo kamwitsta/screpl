@@ -241,7 +241,8 @@
     (let [result (core/count-tree tree progressbar)]
       (print "\r")      ; core/count-tree has a progress bar
       (message :info
-               "A tree from \"" (-> ((:tree-fn tree)) first :display) "\" with "
+               "A tree from \"" (-> ((:tree-fn tree)) first :display) "\" through"
+               (:fn-count tree) "sound changes, with "
                (format "%,d" (:nodes result)) " nodes and "
                (format "%,d" (:leaves result)) " leaves."))))
              
