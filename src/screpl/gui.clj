@@ -23,9 +23,6 @@
 ;; The width of the views in [data-view](#gui/data-view).
 (def column-width 200)
 
-;; Global channel to send "cancel" messages to `core`.
-(def cancel-ch (async/chan))
-
 (def ^:dynamic *state
   "Global variable, holds the state for the GUI."
   (atom {;dialog
@@ -235,7 +232,6 @@
                                   :text (:message dialog)}
                                  {:fx/type :progress-bar}
                                  {:fx/type :button
-                                  :on-action {:event/type :cancel-operation}
                                   :text "Cancel"}]}}
        :on-close-request {:event/type :dialog-close}
        :showing true
@@ -313,8 +309,8 @@
     ; wait for file selection
     ; (when-let [selected-file (.showOpenDialog file-chooser window)]
       ; (let [project (core/load-project (.getAbsolutePath selected-file))]
-  ; (let [project (core/load-project "/home/kamil/screpl/doc/sample-project.clj")])
-  (let [project (core/load-project "/home/kamil/devel/clj/screpl/doc/sample-project.clj")]
+  (let [project (core/load-project "/home/kamil/screpl/doc/sample-project.clj")]
+  ; (let [project (core/load-project "/home/kamil/devel/clj/screpl/doc/sample-project.clj")]
     (when (seq (:target-data project))
       ; resize the window to include target data
       (when (empty? (:target-data @*state))
@@ -361,35 +357,25 @@
   (let [fns         (->> @*state :sound-changes (filter :active?) (map :item))
         val         (-> @*state :selection :source-data)
         tree        (core/grow-tree fns val)
-        output-ch   (async/chan 12)
-        progress-ch (async/chan 12)
-        terminate?  (atom false)]    ; to kill the go-loops
-    ; prepare
-    (message :progress-indet)
-    (swap! *state assoc :output "")
+        progress    (atom 0)
+        output-ch   (async/chan 12)]
     ; listen for output
     (async/go-loop
       []
       (when-let [output (async/<! output-ch)]
-        (when (not @terminate?)
-          (swap! *state update :output str output))
-        (recur)))
-    ; listen for progress
-    (async/go-loop
-      []
-      (when-let [progress (async/<! progress-ch)]
-        (when (not @terminate?)
-          (swap! *state assoc-in [:dialog :message] (str "Printed " progress " lines...")))
-        (recur)))
+        (case (:type output)
+          :finished (swap! *state assoc :dialog nil)
+          :working  (do
+                     (swap! *state update :output str (:output output))
+                     (swap! progress inc)
+                     (swap! *state assoc-in [:dialog :message] (str "Printed " @progress " lines..."))
+                     (recur)))))
     ; run `core/print-tree`
     (async/go
-      (try
-        (core/print-tree tree cancel-ch output-ch progress-ch)
-        (finally
-          (reset! terminate? true)
-          (async/close! output-ch)
-          (async/close! progress-ch)
-          (swap! *state assoc :dialog nil))))))
+      (message :progress-indet)
+      (swap! *state assoc :output "")
+      (core/print-tree tree output-ch)
+      (async/close! output-ch))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
@@ -418,7 +404,6 @@
       (swap! *state assoc-in [:selection :target-data] (:fx/event event))
 
       ; other
-      :cancel-operation (async/>!! cancel-ch :cancel)
       :dialog-close (swap! *state assoc :dialog nil)
       :window-close (stop-gui))
     (catch Exception e (message :error e))))
@@ -495,7 +480,6 @@
 (defn ^:export stop-gui
   "Stop the GUI."
   []
-  (async/close! cancel-ch)
   (fx/unmount-renderer *state renderer))
   ; (System/exit 0))
 

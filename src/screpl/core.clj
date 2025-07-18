@@ -464,51 +464,38 @@
 (defn ^:export print-tree
   "Pretty prints a `screpl.core/Tree`."
   [^Tree tree       ; print this tree
-   cancel-ch        ; listen to this
-   output-ch        ; put output on this channel
-   progress-ch]     ; put progress on this channel
+   output-ch]       ; put output on this channel
   (let [tree'      ((:tree-fn tree))
         root       (first tree')
         fname      (second tree')
-        children   (drop 2 tree')
-        cancelled? (atom false)
-        progress   (atom 1)]
+        children   (drop 2 tree')]
     (letfn [(print-node [[value fname & children] prefix last?]
-              (Thread/sleep 100)
-              ; check for cancellation message
-              (when (some? (async/poll! cancel-ch))
-                (reset! cancelled? true))
-              (when (not @cancelled?)
-                (let [connector     (if last? "└─ " "├─ ")
-                      prefix'       (str prefix (if last? "   " "│  "))   ; accumulates the indent level
-                      head-children (butlast children)
-                      last-child    (last children)]      ; special case: different connector and prefix
-                  ; print the current node/leaf
-                  (async/>!! output-ch (str prefix
-                                            connector
-                                            (:display value)
-                                            " "
-                                            fname
-                                            "\n"))
-                  ; report progress
-                  (swap! progress inc)
-                  (async/>!! progress-ch @progress)
-                  ; repeat for all but last children
-                  (doseq [child head-children]
-                    (print-node child prefix' false))
-                  ; repeat for the last child (needs a different connector)
-                  (when last-child
-                      (print-node last-child prefix' true)))))]
+              (let [connector     (if last? "└─ " "├─ ")
+                    prefix'       (str prefix (if last? "   " "│  "))   ; accumulates the indent level
+                    head-children (butlast children)
+                    last-child    (last children)]      ; special case: different connector and prefix
+                ; print the current node/leaf
+                (async/>!! output-ch
+                           {:type :working
+                            :output (str prefix connector (:display value) " " fname "\n")})
+                ; repeat for all but last children
+                (doseq [child head-children]
+                  (print-node child prefix' false))
+                ; repeat for the last child (needs a different connector)
+                (when last-child
+                    (print-node last-child prefix' true))))]
       (when (seq tree')
         ; print the root withouth any connector
-        (async/>!! output-ch (str (:display root) " " fname "\n"))
-        ; report progress
-        (async/>!! progress-ch @progress)
+        (async/>!! output-ch
+                   {:type :working
+                    :output (str (:display root) " " fname "\n")})
         ; print the immediate children except the last
         (doseq [child (butlast children)]
           (print-node child "" false))
         ; the last child has a different connector
-        (print-node (last children) "" true)))))
+        (print-node (last children) "" true)
+        ; report completion
+        (async/>!! output-ch {:type :finished})))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
