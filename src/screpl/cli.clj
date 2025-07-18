@@ -1,3 +1,12 @@
+;; ~~~ ! CLI is BROKEN ! ~~~
+;; =========================
+;; I needed to make some changes to the core to make it play nicely with the GUI, but the CLI hasn't been updated.
+;; The differences include but maybe aren't limited to:
+;; - print-tree API and formatting
+;; Additionally, core could probably be simplified now. `grow-tree` is probably no longer needed, neither is `count-tree`.
+;; =========================
+
+
 ;; A REPL-based user interface.
 
 ;; Exposes to the user functions from [screpl.core](#screpl.core).

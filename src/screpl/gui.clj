@@ -20,14 +20,14 @@
 
 (declare message project-info stop-gui)
 
+;; Used to pass `:cancel` messages to `core` functions.
+(def cancel-ch (async/chan))
+
 ;; The width of the views in [data-view](#gui/data-view).
 (def column-width 200)
 
 ;; Update the progress bar after every ... steps.
 (def progress-step 1000)
-
-;; Used to pass `:cancel` messages to `core` functions.
-(def cancel-ch (async/chan))
 
 (def ^:dynamic *state
   "Global variable, holds the state for the GUI."
@@ -252,10 +252,11 @@
 (defn- output-view
   "Tables displaying sound changes and data."
   [state]
-  {:fx/type :text-area
-   :editable false
-   :style {:-fx-font-family "monospace"}
-   :text (:output state)})
+  {:fx/type :web-view
+   :url (str "data:text/html;charset=utf-8,"
+             "<html><body style='font-family:monospace;font-size:15px'>"
+             (:output state)
+             "</body></html>")})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - root --------------------------------------------------------------------------------------- {{{ -
@@ -282,6 +283,7 @@
                    :scene (root-scene state)
                    :showing true
                    :title "SCRepl"
+                   :height (* column-width 4)
                    :width (* column-width 2)}]
            (:dialog state) (conj (dialog-view state)))})
 
@@ -363,7 +365,7 @@
   [_]
   (let [fns       (->> @*state :sound-changes (filter :active?) (map :item))
         val       (-> @*state :selection :source-data)
-        tree      (core/grow-tree (flatten (repeat 10 fns)) val)
+        tree      (core/grow-tree fns val)
         counter   (atom 0)
         output-ch (async/chan 12)]  ; 12 is just to make sure nothing has to wait
     ; listen for output

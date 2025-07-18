@@ -463,35 +463,46 @@
 
 (defn ^:export print-tree
   "Pretty prints a `screpl.core/Tree`."
-  [^Tree tree       ; print this tree
-   cancel-ch        ; listen for cancellation here
-   output-ch]       ; put output on this channel
-  (let [tree'      ((:tree-fn tree))
-        root       (first tree')
-        fname      (second tree')
-        children   (drop 2 tree')]
+  [^Tree tree     ; print this tree
+   cancel-ch      ; listen for cancellation here
+   output-ch]     ; put output on this channel
+  (let [tree'    ((:tree-fn tree))
+        root     (first tree')
+        fname    (second tree')
+        children (drop 2 tree')]
     (letfn [(print-node [[value fname & children] prefix last?]
+              ; (Thread/sleep 1000)
               (if (some? (async/poll! cancel-ch))
                 (async/>!! output-ch {:type :cancelled})
                 (let [connector     (if last? "└─ " "├─ ")
-                      prefix'       (str prefix (if last? "   " "│  "))   ; accumulates the indent level
+                      prefix'       (str prefix (if last? "&nbsp;&nbsp;&nbsp;" "│&nbsp;&nbsp;"))   ; accumulates the indent level
                       head-children (butlast children)
                       last-child    (last children)]      ; special case: different connector and prefix
                   ; print the current node/leaf
                   (async/>!! output-ch
                              {:type :working
-                              :output (str prefix connector (:display value) " " fname "\n")})
+                              :output (str "<span style='color:lightsteelblue;'>"
+                                           prefix
+                                           connector
+                                           "</span>"
+                                           (:display value)
+                                           " "
+                                           "<span style='color:olive;'>" fname "</span>"
+                                           "</br>")})
                   ; repeat for all but last children
                   (doseq [child head-children]
                     (print-node child prefix' false))
                   ; repeat for the last child (needs a different connector)
                   (when last-child
-                      (print-node last-child prefix' true)))))]
+                    (print-node last-child prefix' true)))))]
       (when (seq tree')
         ; print the root withouth any connector
         (async/>!! output-ch
                    {:type :working
-                    :output (str (:display root) " " fname "\n")})
+                    :output (str (:display root)
+                                 " " 
+                                 "<span style='color:olive;'>" fname "</span>"
+                                 "</br>")})
         ; print the immediate children except the last
         (doseq [child (butlast children)]
           (print-node child "" false))

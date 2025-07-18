@@ -4,7 +4,7 @@
 
 (ns dev
   (:require [clojure.tools.namespace.repl :refer [refresh]]
-            [screpl.gui :refer [start-gui stop-gui]]))
+            [screpl.gui :refer [start-gui]]))
 
 ; (stop-gui)
 (refresh)
