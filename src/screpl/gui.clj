@@ -23,6 +23,12 @@
 ;; The width of the views in [data-view](#gui/data-view).
 (def column-width 200)
 
+;; Update the progress bar after every ... steps.
+(def progress-step 1000)
+
+;; Used to pass `:cancel` messages to `core` functions.
+(def cancel-ch (async/chan))
+
 (def ^:dynamic *state
   "Global variable, holds the state for the GUI."
   (atom {;dialog
@@ -184,7 +190,7 @@
                                   (column-maker :display)]
                                  [(column-maker :display)])
                       :items (:source-data state)
-                      :on-selected-item-changed {:event/type ::select-source-datum}
+                      :on-selected-item-changed {:event/type :select-source-datum}
                       :pref-width column-width
                       :row-factory {:fx/cell-type :table-row
                                     :describe data-tooltip}
@@ -196,7 +202,7 @@
                      :columns [(column-maker :id)
                                (column-maker :display)]
                      :items (:target-data state)
-                     :on-selected-item-changed {:event/type ::select-target-datum}
+                     :on-selected-item-changed {:event/type :select-target-datum}
                      :pref-width column-width
                      :row-factory {:fx/cell-type :table-row
                                    :describe data-tooltip}
@@ -220,7 +226,7 @@
        :button-types [:ok]
        :content-text (:content-text dialog)
        :header-text ""
-       :on-close-request {:event/type :dialog-close}
+       :on-close-request {:event/type :close-dialog}
        :showing true}
 
       :progress-indet
@@ -232,8 +238,9 @@
                                   :text (:message dialog)}
                                  {:fx/type :progress-bar}
                                  {:fx/type :button
+                                  :on-action {:event/type :cancel-operation}
                                   :text "Cancel"}]}}
-       :on-close-request {:event/type :dialog-close}
+       :on-close-request {:event/type :close-dialog}
        :showing true
        :width 200})))
 
@@ -271,7 +278,7 @@
   [state]
   {:fx/type fx/ext-many
    :desc (cond-> [{:fx/type :stage
-                   :on-close-request {:event/type :window-close}
+                   :on-close-request {:event/type :close-window}
                    :scene (root-scene state)
                    :showing true
                    :title "SCRepl"
@@ -354,27 +361,32 @@
 (defn- print-tree
   "Wrapper around `core/grow-tree` and then `core/print-tree`."
   [_]
-  (let [fns         (->> @*state :sound-changes (filter :active?) (map :item))
-        val         (-> @*state :selection :source-data)
-        tree        (core/grow-tree fns val)
-        progress    (atom 0)
-        output-ch   (async/chan 12)]
+  (let [fns       (->> @*state :sound-changes (filter :active?) (map :item))
+        val       (-> @*state :selection :source-data)
+        tree      (core/grow-tree (flatten (repeat 10 fns)) val)
+        counter   (atom 0)
+        output-ch (async/chan 12)]  ; 12 is just to make sure nothing has to wait
     ; listen for output
     (async/go-loop
       []
       (when-let [output (async/<! output-ch)]
         (case (:type output)
-          :finished (swap! *state assoc :dialog nil)
-          :working  (do
-                     (swap! *state update :output str (:output output))
-                     (swap! progress inc)
-                     (swap! *state assoc-in [:dialog :message] (str "Printed " @progress " lines..."))
-                     (recur)))))
+          :cancelled (do
+                       (swap! *state update :output str "Cancelled.")
+                       (swap! *state assoc :dialog nil))
+          :finished  (swap! *state assoc :dialog nil)
+          :working   (do
+                      (swap! *state update :output str (:output output))
+                      (swap! counter inc)
+                      (when (= 0 (mod @counter progress-step))
+                        (swap! *state assoc-in [:dialog :message]
+                               (str "Printed " (format "%,d" @counter) " lines...")))
+                      (recur)))))
     ; run `core/print-tree`
     (async/go
       (message :progress-indet)
       (swap! *state assoc :output "")
-      (core/print-tree tree output-ch)
+      (core/print-tree tree cancel-ch output-ch)
       (async/close! output-ch))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -394,18 +406,19 @@
       :print-tree (print-tree event)
 
       ; selections
-      ::select-source-datum
+      :select-source-datum
       (do
         (swap! *state assoc-in [:selection :source-data] (:fx/event event))
         (if (nil? (-> @*state :selection :source-data))
           (swap! *state assoc-in [:menu :print-tree :disable] true)
           (swap! *state assoc-in [:menu :print-tree :disable] false)))
-      ::select-target-datum
+      :select-target-datum
       (swap! *state assoc-in [:selection :target-data] (:fx/event event))
 
       ; other
-      :dialog-close (swap! *state assoc :dialog nil)
-      :window-close (stop-gui))
+      :cancel-operation (async/>!! cancel-ch :cancel)
+      :close-dialog (swap! *state assoc :dialog nil)
+      :close-window (stop-gui))
     (catch Exception e (message :error e))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -480,6 +493,7 @@
 (defn ^:export stop-gui
   "Stop the GUI."
   []
+  (async/close! cancel-ch)
   (fx/unmount-renderer *state renderer))
   ; (System/exit 0))
 
