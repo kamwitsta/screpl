@@ -18,7 +18,7 @@
 ;; <a id="gui/globals"></a>
 ;; ## Global variables
 
-(declare message project-info stop-gui)
+(declare load-project message print-tree project-info stop-gui)
 
 ;; Used to pass `:cancel` messages to `core` functions.
 (def cancel-ch (async/chan))
@@ -31,18 +31,8 @@
 
 (def ^:dynamic *state
   "Global variable, holds the state for the GUI."
-  (atom {;dialog
+  (atom {; dialog
          :dialog nil
-         ;menu
-         :menu {:load-project {:fx/type :button
-                               :on-action {:event/type :load-project}
-                               :text "Load project"
-                               :tooltip {:fx/type :tooltip, :show-delay [333 :ms], :text "No project loaded."}}
-                :separator    {:fx/type :separator}
-                :print-tree   {:fx/type :button
-                               :disable true
-                               :on-action {:event/type :print-tree}
-                               :text "Print tree"}}
          ; output
          :output {:text ""
                   :tooltip "No results yet."}
@@ -64,6 +54,7 @@
 ;; - [buttons](#gui/buttons-view)
 ;; - [data](#gui/data-view)
 ;; - [dialog](#gui/dialog-view)
+;; - [menu](#gui/menu-view)
 ;; - [output](#gui/output-view)
 ;; - [root](#gui/root-view)
 
@@ -73,9 +64,17 @@
 
 (defn- buttons-view
   "A bar with buttons exposing core functions."
-  [state]
+  [_]
   {:fx/type :tool-bar
-   :items (-> state :menu vals)})
+   :items [{:fx/type :button
+            :text "Load project"
+            :on-action (partial load-project :button)
+            :tooltip {:fx/type :tooltip, :show-delay [333 :ms], :text "No project loaded."}}
+           {:fx/type :separator}
+           {:fx/type :button
+            :disable true
+            :on-action print-tree
+            :text "Print tree"}]})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - data --------------------------------------------------------------------------------------- {{{ -
@@ -246,6 +245,33 @@
        :width 200})))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
+; - menu --------------------------------------------------------------------------------------- {{{ -
+
+;; <a id="gui/menu-view"></a>
+
+(defn- menu-view
+  "A menu bar exposing core functions."
+  [_]
+  {:fx/type :menu-bar
+   :menus [{:fx/type :menu
+            :text "File"
+            :items [{:fx/type :menu-item
+                     :text "Load project"
+                     :accelerator [:shortcut :o]
+                     :on-action (partial load-project :menu)}
+                    {:fx/type :separator-menu-item}
+                    {:fx/type :menu-item
+                     :text "Quit"
+                     :on-action stop-gui}]}
+           {:fx/type :menu
+            :text "Tree"
+            :items [{:fx/type :menu-item
+                     :text "Print tree"
+                     :accelerator [:shortcut :q]
+                     :disable true
+                     :on-action print-tree}]}]})
+
+; ---------------------------------------------------------------------------------------------- }}} -
 ; - output ------------------------------------------------------------------------------------- {{{ -
 
 ;; <a id="gui/output-view"></a>
@@ -269,12 +295,14 @@
   "The root scene."
   [state]
   {:fx/type :scene
-   :root {:fx/type :split-pane
-          :divider-positions [0.1 0.5]
-          :orientation :vertical
-          :items [(buttons-view state)
-                  (output-view state)
-                  (data-view state)]}})
+   :root {:fx/type :v-box
+          :children [(menu-view state)
+                     (buttons-view state)
+                     {:fx/type :split-pane
+                      :divider-positions [0.5]
+                      :orientation :vertical
+                      :items [(output-view state)
+                              (data-view state)]}]}})
 
 (defn- root-view
   "The root stage."
@@ -310,33 +338,37 @@
 
 (defn- load-project
   "Wrapper around `core/load-project`."
-  [event]
-  ; prepare a file chooser window
-  ; (let [file-chooser  (FileChooser.)
-        ; window        (-> event :fx/event .getSource .getScene .getWindow)] 
-    ; (.addAll (.getExtensionFilters file-chooser)
-             ; [(FileChooser$ExtensionFilter. "Clojure files (*.clj)" ["*.clj"])
-              ; (FileChooser$ExtensionFilter. "All files (*.*)" ["*.*"])])
-    ; wait for file selection
-    ; (when-let [selected-file (.showOpenDialog file-chooser window)]
-      ; (let [project (core/load-project (.getAbsolutePath selected-file))]
+  [source event]
   ; (let [project (core/load-project "/home/kamil/screpl/doc/sample-project.clj")]
-  (let [project (core/load-project "/home/kamil/devel/clj/screpl/doc/sample-project.clj")]
-    (when (seq (:target-data project))
-      ; resize the window to include target data
-      (when (empty? (:target-data @*state))
-       (let [stage (-> event :fx/event .getSource .getScene .getWindow)]
-          (.setHeight stage (.getHeight stage))   ; seems redundant but is necessary
-          (.setWidth stage (+ column-width (.getWidth stage)))))
-      (swap! *state assoc :target-data (:target-data project)))
-    (swap! *state assoc :source-data (:source-data project))
-    (swap! *state assoc :sound-changes (map-indexed
-                                         (fn [idx itm]
-                                           (hash-map :active? true
-                                                     :id idx
-                                                     :item itm))
-                                         (:sound-changes project)))))
-    ; (swap! *state assoc-in [:buttons :load-project :tooltip :text] (project-info selected-file))))
+  ; (let [project (core/load-project "/home/kamil/devel/clj/screpl/doc/sample-project.clj")]
+  (case source
+    :button (println (-> event .getSource .getScene .getWindow))
+    :menu (println (-> event .getSource .getParentPopup .getScene)))
+
+  (comment
+  ; prepare a file chooser window
+    (let [file-chooser  (FileChooser.)
+          window        (-> event :fx/event .getSource .getScene .getWindow)] 
+      (.addAll (.getExtensionFilters file-chooser)
+               [(FileChooser$ExtensionFilter. "Clojure files (*.clj)" ["*.clj"])
+                (FileChooser$ExtensionFilter. "All files (*.*)" ["*.*"])])
+      ; wait for file selection
+      (when-let [selected-file (.showOpenDialog file-chooser window)]
+        (let [project (core/load-project (.getAbsolutePath selected-file))]
+          (when (seq (:target-data project))
+            ; resize the window to include target data
+            (when (empty? (:target-data @*state))
+              (.setHeight window (.getHeight window))   ; seems redundant but is necessary
+              (.setWidth window (+ column-width (.getWidth window))))
+            (swap! *state assoc :target-data (:target-data project)))
+          (swap! *state assoc :source-data (:source-data project))
+          (swap! *state assoc :sound-changes (map-indexed
+                                               (fn [idx itm]
+                                                 (hash-map :active? true
+                                                           :id idx
+                                                           :item itm))
+                                               (:sound-changes project)))
+          (swap! *state assoc-in [:buttons :load-project :tooltip :text] (project-info selected-file)))))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - project-info ------------------------------------------------------------------------------- {{{ -
@@ -417,11 +449,6 @@
   [event]
   (try
     (case (:event/type event)
-
-      ; wrappers
-      :load-project (load-project event)
-      :print-tree (print-tree event)
-
       ; selections
       :select-source-datum
       (do
@@ -431,7 +458,6 @@
           (swap! *state assoc-in [:menu :print-tree :disable] false)))
       :select-target-datum
       (swap! *state assoc-in [:selection :target-data] (:fx/event event))
-
       ; other
       :cancel-operation (async/>!! cancel-ch :cancel)
       :close-dialog (swap! *state assoc :dialog nil)
