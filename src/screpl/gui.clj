@@ -37,11 +37,14 @@
          :output {:text ""
                   :tooltip "No results yet."}
          ; project
-         :sound-changes []
-         :source-data []
+         :project {:sound-changes []
+                   :source-data []}
          ; selections (handled by [event-handler](#gui/event-handler)
          :selection {:source-data nil
-                     :target-data nil}}))
+                     :target-data nil}
+         ; window
+         :window {:height (* column-width 4)
+                  :width (* column-width 2)}}))
 
 ; ============================================================================================== }}} =
 ; = views ====================================================================================== {{{ =
@@ -51,32 +54,12 @@
 
 ;; Functions that describe the look and behaviour of the GUI.
 
-;; - [buttons](#gui/buttons-view)
 ;; - [data](#gui/data-view)
 ;; - [dialog](#gui/dialog-view)
 ;; - [menu](#gui/menu-view)
 ;; - [output](#gui/output-view)
 ;; - [root](#gui/root-view)
 
-; - buttons ------------------------------------------------------------------------------------ {{{ -
-
-;; <a id="gui/buttons-view"></a>
-
-(defn- buttons-view
-  "A bar with buttons exposing core functions."
-  [_]
-  {:fx/type :tool-bar
-   :items [{:fx/type :button
-            :text "Load project"
-            :on-action (partial load-project :button)
-            :tooltip {:fx/type :tooltip, :show-delay [333 :ms], :text "No project loaded."}}
-           {:fx/type :separator}
-           {:fx/type :button
-            :disable true
-            :on-action print-tree
-            :text "Print tree"}]})
-
-; ---------------------------------------------------------------------------------------------- }}} -
 ; - data --------------------------------------------------------------------------------------- {{{ -
 
 ;; <a id="gui/data-view"></a>
@@ -132,7 +115,7 @@
                 :spacing 1
                 :children [{:fx/type :button
                             :on-action (fn [_]
-                                         (swap! *state update :sound-changes
+                                         (swap! *state update-in [:project :sound-changes]
                                                 #(swap-elements % (dec index) index)))
                             :font 8
                             :max-height 18
@@ -143,7 +126,7 @@
                             :visible (> index 0)}
                            {:fx/type :button
                             :on-action (fn [_]
-                                         (swap! *state update :sound-changes
+                                         (swap! *state update-in [:project :sound-changes]
                                                 #(swap-elements % index (inc index))))
                             :font 8
                             :max-height 18
@@ -151,10 +134,10 @@
                             :min-height 18
                             :min-width 18
                             :text "▼"
-                            :visible (< index (dec (count (:sound-changes @*state))))}]}
+                            :visible (< index (dec (count (->@*state :project :sound-changes))))}]}
                {:fx/type :check-box
                 :on-action (fn [_]
-                             (swap! *state update :sound-changes
+                             (swap! *state update-in [:project :sound-changes]
                                     (partial map (fn [i]
                                                    (cond-> i
                                                      (= (:id i) (:id item))
@@ -174,13 +157,13 @@
 (defn- data-view
   "Tables displaying sound changes and data."
   [state]
-  (let [has-target-data? (seq (:target-data state))]
+  (let [has-target-data? (seq (-> state :project :target-data))]
     {:fx/type :split-pane
      :divider-positions (if has-target-data? [0.333 0.666] [0.5])
      :items (cond-> [; sound changes
                      {:fx/type :scroll-pane
                       :content {:fx/type :v-box
-                                :children (map-indexed item-view (:sound-changes state))}
+                                :children (map-indexed item-view (-> state :project :sound-changes))}
                       :pref-width column-width}
                      ; source-data
                      {:fx/type :table-view
@@ -189,7 +172,7 @@
                                  [(column-maker :id)
                                   (column-maker :display)]
                                  [(column-maker :display)])
-                      :items (:source-data state)
+                      :items (-> state :project :source-data)
                       :on-selected-item-changed {:event/type :select-source-datum}
                       :pref-width column-width
                       :row-factory {:fx/cell-type :table-row
@@ -201,7 +184,7 @@
                      :column-resize-policy :constrained  ; don't show an extra column
                      :columns [(column-maker :id)
                                (column-maker :display)]
-                     :items (:target-data state)
+                     :items (-> state :project :target-data)
                      :on-selected-item-changed {:event/type :select-target-datum}
                      :pref-width column-width
                      :row-factory {:fx/cell-type :table-row
@@ -258,17 +241,17 @@
             :items [{:fx/type :menu-item
                      :text "Load project"
                      :accelerator [:shortcut :o]
-                     :on-action (partial load-project :menu)}
+                     :on-action load-project}
                     {:fx/type :separator-menu-item}
                     {:fx/type :menu-item
                      :text "Quit"
+                     :accelerator [:shortcut :q]
                      :on-action stop-gui}]}
            {:fx/type :menu
             :text "Tree"
             :items [{:fx/type :menu-item
                      :text "Print tree"
-                     :accelerator [:shortcut :q]
-                     :disable true
+                     :disable (nil? (-> @*state :selection :source-data))
                      :on-action print-tree}]}]})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -297,7 +280,6 @@
   {:fx/type :scene
    :root {:fx/type :v-box
           :children [(menu-view state)
-                     (buttons-view state)
                      {:fx/type :split-pane
                       :divider-positions [0.5]
                       :orientation :vertical
@@ -313,8 +295,8 @@
                    :scene (root-scene state)
                    :showing true
                    :title "SCRepl"
-                   :height (* column-width 4)
-                   :width (* column-width 2)}]
+                   :height (-> state :window :height)
+                   :width (-> state :window :width)}]
            (:dialog state) (conj (dialog-view state)))})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -338,37 +320,31 @@
 
 (defn- load-project
   "Wrapper around `core/load-project`."
-  [source event]
-  ; (let [project (core/load-project "/home/kamil/screpl/doc/sample-project.clj")]
-  ; (let [project (core/load-project "/home/kamil/devel/clj/screpl/doc/sample-project.clj")]
-  (case source
-    :button (println (-> event .getSource .getScene .getWindow))
-    :menu (println (-> event .getSource .getParentPopup .getScene)))
-
-  (comment
+  [event]
   ; prepare a file chooser window
-    (let [file-chooser  (FileChooser.)
-          window        (-> event :fx/event .getSource .getScene .getWindow)] 
-      (.addAll (.getExtensionFilters file-chooser)
-               [(FileChooser$ExtensionFilter. "Clojure files (*.clj)" ["*.clj"])
-                (FileChooser$ExtensionFilter. "All files (*.*)" ["*.*"])])
-      ; wait for file selection
-      (when-let [selected-file (.showOpenDialog file-chooser window)]
-        (let [project (core/load-project (.getAbsolutePath selected-file))]
-          (when (seq (:target-data project))
-            ; resize the window to include target data
-            (when (empty? (:target-data @*state))
-              (.setHeight window (.getHeight window))   ; seems redundant but is necessary
-              (.setWidth window (+ column-width (.getWidth window))))
-            (swap! *state assoc :target-data (:target-data project)))
-          (swap! *state assoc :source-data (:source-data project))
-          (swap! *state assoc :sound-changes (map-indexed
-                                               (fn [idx itm]
-                                                 (hash-map :active? true
-                                                           :id idx
-                                                           :item itm))
-                                               (:sound-changes project)))
-          (swap! *state assoc-in [:buttons :load-project :tooltip :text] (project-info selected-file)))))))
+  (let [window        (-> event .getTarget .getParentPopup .getOwnerWindow) 
+        file-chooser  (FileChooser.)]
+    (.addAll (.getExtensionFilters file-chooser)
+             [(FileChooser$ExtensionFilter. "Clojure files (*.clj)" ["*.clj"])
+              (FileChooser$ExtensionFilter. "All files (*.*)" ["*.*"])])
+    ; wait for file selection
+    (when-let [selected-file (.showOpenDialog file-chooser window)]
+      (let [project (core/load-project (.getAbsolutePath selected-file))]
+        (when (seq (:target-data project))
+          ; resize the window to include target data
+          ; height must be given, and must be different than originally
+          (when (empty? (-> @*state :project :target-data))
+            (swap! *state assoc :window {:height (* column-width 4.1)
+                                         :width (* column-width 3)}))
+          (swap! *state assoc-in [:project :target-data] (:target-data project)))
+        (swap! *state assoc-in [:project :source-data] (:source-data project))
+        (swap! *state assoc-in [:project :sound-changes] (map-indexed
+                                                          (fn [idx itm]
+                                                            (hash-map :active? true
+                                                                      :id idx
+                                                                      :item itm))
+                                                          (:sound-changes project)))))))
+        ; (swap! *state assoc-in [:buttons :load-project :tooltip :text] (project-info selected-file))))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - project-info ------------------------------------------------------------------------------- {{{ -
@@ -378,9 +354,9 @@
 (defn- project-info
   "Displays basic information about the currently loaded project."
   [filename]
-  (let [scs   (count (:sound-changes @*state))
-        src   (count (:source-data @*state))
-        trg   (count (:target-data @*state))]
+  (let [scs   (count (-> @*state :project :sound-changes))
+        src   (count (-> @*state :project :source-data))
+        trg   (count (-> @*state :project :target-data))]
     (str "Project " filename ".\n"
          "Contains:\n"
          "  " scs " sound change functions,\n"
@@ -407,7 +383,7 @@
 (defn- print-tree
   "Wrapper around `core/grow-tree` and then `core/print-tree`."
   [_]
-  (let [fns       (->> @*state :sound-changes (filter :active?) (map :item))
+  (let [fns       (->> @*state :project :sound-changes (filter :active?) (map :item))
         val       (-> @*state :selection :source-data)
         tree      (core/grow-tree fns val)
         counter   (atom 0)
@@ -450,18 +426,12 @@
   (try
     (case (:event/type event)
       ; selections
-      :select-source-datum
-      (do
-        (swap! *state assoc-in [:selection :source-data] (:fx/event event))
-        (if (nil? (-> @*state :selection :source-data))
-          (swap! *state assoc-in [:menu :print-tree :disable] true)
-          (swap! *state assoc-in [:menu :print-tree :disable] false)))
-      :select-target-datum
-      (swap! *state assoc-in [:selection :target-data] (:fx/event event))
+      :select-source-datum (swap! *state assoc-in [:selection :source-data] (:fx/event event))
+      :select-target-datum (swap! *state assoc-in [:selection :target-data] (:fx/event event))
       ; other
       :cancel-operation (async/>!! cancel-ch :cancel)
       :close-dialog (swap! *state assoc :dialog nil)
-      :close-window (stop-gui))
+      :close-window (stop-gui nil))
     (catch Exception e (message :error e))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -535,7 +505,7 @@
 
 (defn ^:export stop-gui
   "Stop the GUI."
-  []
+  [_]
   (async/close! cancel-ch)
   (fx/unmount-renderer *state renderer))
   ; (System/exit 0))
@@ -543,3 +513,5 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================== }}} =
+
+(start-gui)

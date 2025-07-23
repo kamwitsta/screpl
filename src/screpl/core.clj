@@ -12,8 +12,7 @@
 
 (ns screpl.core
   (:gen-class)
-  (:require [clansi :as clansi]
-            [clojure.core.async :as async]
+  (:require [clojure.core.async :as async]
             [clojure.set :as set]
             [fast-edn.core :as edn]
             [malli.core :as m]
