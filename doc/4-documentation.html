@@ -2866,7 +2866,14 @@ net.brehaut.ClojureTools = (function (SH) {
   };
 })(SyntaxHighlighter);
 </script><title>screpl -- Marginalia</title></head><body><table><tr><td class="docs"><div class="header"><h1 class="project-name"><a href="https://github.com/kamwitsta/screpl">screpl</a></h1><h2 class="project-version">0.2.0</h2><br /><p>Replication of sound changes</p>
-</div><div class="dependencies"><h3>dependencies</h3><table><tr><td class="dep-name">org.clojure/clojure</td><td class="dotted"><hr /></td><td class="dep-version">1.12.0</td></tr><tr><td class="dep-name">clansi</td><td class="dotted"><hr /></td><td class="dep-version">1.0.0</td></tr><tr><td class="dep-name">io.github.tonsky/fast-edn</td><td class="dotted"><hr /></td><td class="dep-version">1.1.2</td></tr><tr><td class="dep-name">metosin/malli</td><td class="dotted"><hr /></td><td class="dep-version">0.17.0</td></tr><tr><td class="dep-name">org.mariadb.jdbc/mariadb-java-client</td><td class="dotted"><hr /></td><td class="dep-version">3.5.3</td></tr><tr><td class="dep-name">org.babashka/sci</td><td class="dotted"><hr /></td><td class="dep-version">0.9.45</td></tr><tr><td class="dep-name">io.github.camsaul/toucan2</td><td class="dotted"><hr /></td><td class="dep-version">1.0.565</td></tr></table></div></td><td class="codes" style="text-align: center; vertical-align: middle;color: #666;padding-right:20px"><br /><br /><br />(this space intentionally left almost blank)</td></tr><tr><td class="docs"><div class="toc"><a name="toc"><h3>namespaces</h3></a><ul><li><a href="#screpl.cli">screpl.cli</a></li><li><a href="#screpl.core">screpl.core</a></li><li><a href="#screpl.main">screpl.main</a></li></ul></div></td><td class="codes">&nbsp;</td></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#screpl.cli" name="screpl.cli"><h1 class="project-name">screpl.cli</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>A REPL-based user interface.</p>
+</div><div class="dependencies"><h3>dependencies</h3><table><tr><td class="dep-name">org.clojure/clojure</td><td class="dotted"><hr /></td><td class="dep-version">1.12.0</td></tr><tr><td class="dep-name">io.github.tonsky/fast-edn</td><td class="dotted"><hr /></td><td class="dep-version">1.1.2</td></tr><tr><td class="dep-name">metosin/malli</td><td class="dotted"><hr /></td><td class="dep-version">0.17.0</td></tr><tr><td class="dep-name">org.mariadb.jdbc/mariadb-java-client</td><td class="dotted"><hr /></td><td class="dep-version">3.5.3</td></tr><tr><td class="dep-name">io.github.camsaul/toucan2</td><td class="dotted"><hr /></td><td class="dep-version">1.0.565</td></tr><tr><td class="dep-name">clansi</td><td class="dotted"><hr /></td><td class="dep-version">1.0.0</td></tr><tr><td class="dep-name">org.babashka/sci</td><td class="dotted"><hr /></td><td class="dep-version">0.9.45</td></tr><tr><td class="dep-name">cljfx</td><td class="dotted"><hr /></td><td class="dep-version">1.9.5</td></tr><tr><td class="dep-name">org.clojure/core.async</td><td class="dotted"><hr /></td><td class="dep-version">1.8.741</td></tr></table></div></td><td class="codes" style="text-align: center; vertical-align: middle;color: #666;padding-right:20px"><br /><br /><br />(this space intentionally left almost blank)</td></tr><tr><td class="docs"><div class="toc"><a name="toc"><h3>namespaces</h3></a><ul><li><a href="#screpl.cli">screpl.cli</a></li><li><a href="#screpl.core">screpl.core</a></li><li><a href="#screpl.gui">screpl.gui</a></li><li><a href="#screpl.main">screpl.main</a></li></ul></div></td><td class="codes">&nbsp;</td></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#screpl.cli" name="screpl.cli"><h1 class="project-name">screpl.cli</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h1>~~~ ! CLI is BROKEN ! ~~~</h1>
+
+<p>I needed to make some changes to the core to make it play nicely with the GUI, but the CLI hasn't been updated.
+The differences include but maybe aren't limited to:
+- print-tree API and formatting</p>
+
+<h1>Additionally, core could probably be simplified now. `grow-tree` is probably no longer needed, neither is `count-tree`.</h1>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>A REPL-based user interface.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Exposes to the user functions from <a href="#screpl.core">screpl.core</a>.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><ol>
 <li><a href="#cli/globals">Global variables</a></li>
@@ -2909,7 +2916,7 @@ net.brehaut.ClojureTools = (function (SH) {
                         (:index data) (conj (str &quot; in item &quot; (:index data)))
                         (:display data) (conj (str &quot; (&quot; (:display data) &quot;)&quot;))
                         (:field data) (conj (str &quot; in &quot; (:field data))))]
-             (println (str &quot;[ ✗ ] Error&quot; (apply str bits) &quot;:\n      &quot; (err :cause) &quot;\n&quot;)))
+             (println (str &quot;[ ✗ ] Error&quot; (apply str bits) &quot;:\n      &quot; (:cause err) &quot;\n&quot;)))
     :info  (println (str &quot;[ 🛈 ] &quot; (apply str messages)))
     :ok    (println (str &quot;[ ✓ ] &quot; (apply str messages)))
     :quest (let [options (second messages)]
@@ -3028,7 +3035,8 @@ net.brehaut.ClojureTools = (function (SH) {
     (let [result (core/count-tree tree progressbar)]
       (print &quot;\r&quot;)      ; core/count-tree has a progress bar
       (message :info
-               &quot;A tree from \&quot;&quot; (-&gt; ((:tree-fn tree)) first :display) &quot;\&quot; with &quot;
+               &quot;A tree from \&quot;&quot; (-&gt; ((:tree-fn tree)) first :display) &quot;\&quot; through&quot;
+               (:fn-count tree) &quot;sound changes, with &quot;
                (format &quot;%,d&quot; (:nodes result)) &quot; nodes and &quot;
                (format &quot;%,d&quot; (:leaves result)) &quot; leaves.&quot;))))</pre></td></tr><tr><td class="docs"><p><a id="cli/find-irregulars"></a></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Wrapper around <code>core/find-irregulars</code>. If <code>keys</code> are not given, <code>:display</code> is used.</p>
@@ -3199,7 +3207,7 @@ net.brehaut.ClojureTools = (function (SH) {
 </td><td class="codes"></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(ns screpl.core
   (:gen-class)
-  (:require [clansi :as clansi]
+  (:require [clojure.core.async :as async]
             [clojure.set :as set]
             [fast-edn.core :as edn]
             [malli.core :as m]
@@ -3376,13 +3384,12 @@ net.brehaut.ClojureTools = (function (SH) {
       data)))</pre></td></tr><tr><td class="docs"><p><a id="core/load-scs"></a></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Reads, evals, and validates sound changes. Returns a vector of functions.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn load-scs
-  [ctx          ; eval in this context
-   project]     ; get scs from this
+  [project]     ; get scs from this
   (-&gt;&gt; project
       :sound-changes
       (attach-to-path (:project-file project))
       (slurp)
-      (sci/eval-string* ctx)
+      (sci/eval-string)
       (map-indexed (fn [idx itm]
                      (try
                        (m/assert SCItem itm)
@@ -3394,12 +3401,11 @@ net.brehaut.ClojureTools = (function (SH) {
       (doall)))</pre></td></tr><tr><td class="docs"><p><a id="core/load-projectfile"></a></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Reads, evals, and validates a project file. Returns the hash map returned by the project file + <code>:project-file</code> containing the path to the project file.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn load-projectfile
-  [ctx          ; eval in this context
-   filename]
+  [filename]
   (try
     (-&gt;&gt; filename
          (slurp)
-         (sci/eval-string* ctx)
+         (sci/eval-string)
          (m/assert ProjectFile)
          (merge {:project-file filename}))
     ; probably either sci or malli
@@ -3419,10 +3425,9 @@ net.brehaut.ClojureTools = (function (SH) {
                       (merge (ex-data e) {:filename filename}))))))</pre></td></tr><tr><td class="docs"><p><a id="core/load-project"></a></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Load an entire project based on a project file.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn ^:export load-project
-  [ctx          ; sci context
-   filename]    ; a project file
-  (let [project (load-projectfile ctx filename)
-        scs     (load-scs ctx project)
+  [filename]    ; a project file
+  (let [project (load-projectfile filename)
+        scs     (load-scs project)
         data    (load-data project)]
     (merge data {:project-file filename     ; data might be both source and target or just source
                  :sound-changes scs})))</pre></td></tr><tr><td class="docs"><p><a id="core/tree"></a></p>
@@ -3508,41 +3513,66 @@ net.brehaut.ClojureTools = (function (SH) {
     (let [tree     (fn [] (grow-tree-fn functions value))
           fn-count (count functions)]
       (-&gt;Tree tree fn-count))))</pre></td></tr><tr><td class="docs"><p><a id="core/print-tree"></a></p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Pretty prints a <code>screpl.core/Tree</code>.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Pretty prints a <code>screpl.core/Tree</code>. Returns a map with the number of nodes and leaves.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn ^:export print-tree
-  [^Tree tree       ; print this tree
-   output-fn        ; using this function
-   use-clansi]      ; coloured output?
+  [^Tree tree     ; print this tree
+   cancel-ch      ; listen for cancellation here
+   output-ch]     ; put output on this channel
   (let [tree'    ((:tree-fn tree))
         root     (first tree')
         fname    (second tree')
-        children (drop 2 tree')]
+        children (drop 2 tree')
+        counter  (atom {:nodes 0, :leaves 0})]
     (letfn [(print-node [[value fname &amp; children] prefix last?]
-              (let [connector     (if last? &quot;└─ &quot; &quot;├─ &quot;)
-                    prefix'       (str prefix (if last? &quot;   &quot; &quot;│  &quot;))   ; accumulates the indent level
-                    head-children (butlast children)
-                    last-child    (last children)]      ; special case: different connector and prefix
-                ; print hte current node/leaf
-                (output-fn (str prefix
-                                connector
-                                (:display value)
-                                &quot; &quot;
-                                (if use-clansi (clansi/style fname :blue) fname)
-                                &quot;\n&quot;))
-                ; repeat for all but last children
-                (doseq [child head-children]
-                  (print-node child prefix' false))
-                ; repeat for the last child (needs a different connector)
-                (when last-child
-                    (print-node last-child prefix' true))))]
+              ; check for cancellation
+              (if (some? (async/poll! cancel-ch))
+                (async/&gt;!! output-ch {:status :cancelled})
+                (let [connector     (if last? &quot;└─ &quot; &quot;├─ &quot;)
+                      prefix'       (str prefix (if last? &quot;&amp;nbsp;&amp;nbsp;&amp;nbsp;&quot; &quot;│&amp;nbsp;&amp;nbsp;&quot;))   ; accumulates the indent level
+                      head-children (butlast children)
+                      last-child    (last children)]      ; special case: different connector and prefix
+                  ; print the current node/leaf
+                  (async/&gt;!! output-ch
+                             {:status :in-progress
+                              :output (str &quot;&lt;span style='color:lightsteelblue;'&gt;&quot;
+                                           prefix
+                                           connector
+                                           &quot;&lt;/span&gt;&quot;
+                                           (:display value)
+                                           &quot; &quot;
+                                           &quot;&lt;span style='color:olive;'&gt;&quot; fname &quot;&lt;/span&gt;&quot;
+                                           &quot;&lt;/br&gt;&quot;)})
+                  ; update counter
+                  (if (empty? children)
+                    (swap! counter update :leaves inc)
+                    (swap! counter update :nodes inc))
+                  ; repeat for all but last children
+                  (doseq [child head-children]
+                    (print-node child prefix' false))
+                  ; repeat for the last child (needs a different connector)
+                  (when last-child
+                    (print-node last-child prefix' true)))))]
       (when (seq tree')
-        (output-fn (str (:display root)                 ; print the root withouth any connector
-                        &quot; &quot;
-                        (if use-clansi (clansi/style fname :blue) fname)
-                        &quot;\n&quot;))
-        (doseq [child (butlast children)]               ; print the immediate children except the last
+        ; print the root withouth any connector
+        (async/&gt;!! output-ch
+                   {:status :in-progress
+                    :output (str (:display root)
+                                 &quot; &quot; 
+                                 &quot;&lt;span style='color:olive;'&gt;&quot; fname &quot;&lt;/span&gt;&quot;
+                                 &quot;&lt;/br&gt;&quot;)})
+        ; update counter
+        (if (empty? children)
+          (swap! counter update :leaves inc)
+          (swap! counter update :nodes inc))
+        ; print the immediate children except the last
+        (doseq [child (butlast children)]
           (print-node child &quot;&quot; false))
-        (print-node (last children) &quot;&quot; true)))))        ; the last one has a different connector</pre></td></tr><tr><td class="docs"><p><a id="core/target"></a></p>
+        ; the last child has a different connector
+        (print-node (last children) &quot;&quot; true)
+        ; report completion
+        (async/&gt;!! output-ch {:status :completed})
+        ; return counter
+        counter))))</pre></td></tr><tr><td class="docs"><p><a id="core/target"></a></p>
 
 <h2>Relations between source and target data</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Functions that do not care about the nodes, only about the leaves. It is faster to generate just the leaves than to extract them from a <a href="#core/tree">core/Tree</a>.</p>
@@ -3613,15 +3643,405 @@ net.brehaut.ClojureTools = (function (SH) {
                         (progress!)
                         (when-not (produces-target? functions src (find-trg src) keys nil)
                           src)))
-         (keep identity))))     ; (filter some?) could realize the entire sequence</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#screpl.main" name="screpl.main"><h1 class="project-name">screpl.main</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>The entry point to SCRepl.</p>
+         (keep identity))))     ; (filter some?) could realize the entire sequence</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#screpl.gui" name="screpl.gui"><h1 class="project-name">screpl.gui</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>A JavaFX user interface.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><ol>
+<li><a href="#gui/globals">Global variables</a></li>
+<li><a href="#gui/views">Parts of the interface</a></li>
+<li><a href="#gui/handlers">Functionality</a></li>
+<li><a href="#gui/other">Other</a></li>
+</ol>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ns screpl.gui
+  (:require [cljfx.api :as fx]
+            [clojure.core.async :as async]
+            [clojure.string :as string]
+            [screpl.core :as core])
+  (:import [javafx.stage FileChooser FileChooser$ExtensionFilter]))</pre></td></tr><tr><td class="docs"><p><a id="gui/globals"></a></p>
+
+<h2>Global variables</h2>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(declare load-project message print-tree stop-gui)</pre></td></tr><tr><td class="docs"><p>Used to pass <code>:cancel</code> messages to <code>core</code> functions.</p>
+</td><td class="codes"><pre class="brush: clojure">(def cancel-ch (async/chan))</pre></td></tr><tr><td class="docs"><p>The width of the views in <a href="#gui/data-view">data-view</a>.</p>
+</td><td class="codes"><pre class="brush: clojure">(def column-width 200)</pre></td></tr><tr><td class="docs"><p>Update the progress bar after every ... steps.</p>
+</td><td class="codes"><pre class="brush: clojure">(def progress-step 1000)</pre></td></tr><tr><td class="docs"><p>Global variable, holds the state for the GUI.</p>
+</td><td class="codes"><pre class="brush: clojure">(def ^:dynamic *state
+  (atom {; dialog
+         :dialog nil
+         ; output
+         :output {:text &quot;&quot;
+                  :tooltip &quot;No results yet.&quot;}
+         ; project
+         :project {:filename nil
+                   :sound-changes []
+                   :source-data []}
+         ; selections (handled by [event-handler](#gui/event-handler)
+         :selection {:source-data nil
+                     :target-data nil}
+         ; window
+         :window {:height (* column-width 4)
+                  :width (* column-width 2)}}))</pre></td></tr><tr><td class="docs"><p><a id="gui/views"></a></p>
+
+<h2>Parts of the interface</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Functions that describe the look and behaviour of the GUI.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><ul>
+<li><a href="#gui/data-view">data</a></li>
+<li><a href="#gui/dialog-view">dialog</a></li>
+<li><a href="#gui/menu-view">menu</a></li>
+<li><a href="#gui/output-view">output</a></li>
+<li><a href="#gui/root-view">root</a></li>
+</ul>
+</td><td class="codes"></td></tr><tr><td class="docs"><p><a id="gui/data-view"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Makes a single column for tables displaying source and target data.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- column-maker
+  [property]    ; the keyword in source- and target-data
+  (case property
+    :display {:fx/type :table-column
+              :cell-value-factory property
+              :pref-width (* column-width 3/4)
+              :text &quot;Display&quot;} 
+    :id      {:fx/type :table-column
+              :cell-value-factory property
+              :pref-width (* column-width 1/4)
+              :text &quot;ID&quot;}
+    (throw (ex-info (str &quot;An error in column factory that shouldn't have happened. `property`=&quot; property) {})))) </pre></td></tr><tr><td class="docs"><p>Makes a tooltip for source and target datum's.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- data-tooltip
+  [item]
+  {:tooltip {:fx/type :tooltip
+             :show-delay [333 :ms]
+             :text (-&gt;&gt; item
+                        (map (fn [[k v]] (str (name k) &quot;: &quot; (pr-str v))))
+                        (string/join &quot;\n&quot;))}})</pre></td></tr><tr><td class="docs"><p>Swaps two elements inside a collection. Also works on lazy sequences because <code>coll</code> is converted to a vector.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- swap-elements
+  [coll i j]
+  (let [v (vec coll)]
+    (assoc v
+           i (nth v j)
+           j (nth v i))))</pre></td></tr><tr><td class="docs"><p>Makes a view for a single sound change.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- item-view
+  [index
+   item]
+  {:fx/type :h-box
+    :padding 3
+    :spacing 9
+    :children [{:fx/type :h-box
+                :alignment :center-right
+                :spacing 1
+                :children [{:fx/type :button
+                            :on-action (fn [_]
+                                         (swap! *state update-in [:project :sound-changes]
+                                                #(swap-elements % (dec index) index)))
+                            :font 8
+                            :max-height 18
+                            :max-width 18
+                            :min-height 18
+                            :min-width 18
+                            :text &quot;▲&quot;
+                            :visible (&gt; index 0)}
+                           {:fx/type :button
+                            :on-action (fn [_]
+                                         (swap! *state update-in [:project :sound-changes]
+                                                #(swap-elements % index (inc index))))
+                            :font 8
+                            :max-height 18
+                            :max-width 18
+                            :min-height 18
+                            :min-width 18
+                            :text &quot;▼&quot;
+                            :visible (&lt; index (dec (count (-&gt;@*state :project :sound-changes))))}]}
+               {:fx/type :check-box
+                :on-action (fn [_]
+                             (swap! *state update-in [:project :sound-changes]
+                                    (partial map (fn [i]
+                                                   (cond-&gt; i
+                                                     (= (:id i) (:id item))
+                                                     (update :active? not))))))
+                :selected (:active? item)}
+               {:fx/type :label
+                :disable (-&gt; item :active? not)
+                :text (-&gt; item :item meta :name str)
+                :tooltip {:fx/type :tooltip
+                          :show-delay [333 :ms]
+                          :text (-&gt; item :item meta :doc)}}]})</pre></td></tr><tr><td class="docs"><p>Tables displaying sound changes and data.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- data-view
+  [state]
+  (let [has-target-data? (seq (-&gt; state :project :target-data))]
+    {:fx/type :split-pane
+     :divider-positions (if has-target-data? [0.333 0.666] [0.5])
+     :items (cond-&gt; [; sound changes
+                     {:fx/type :scroll-pane
+                      :content {:fx/type :v-box
+                                :children (map-indexed item-view (-&gt; state :project :sound-changes))}
+                      :pref-width column-width}
+                     ; source-data
+                     {:fx/type :table-view
+                      :column-resize-policy :constrained  ; don't show an extra column
+                      :columns (if has-target-data?
+                                 [(column-maker :id)
+                                  (column-maker :display)]
+                                 [(column-maker :display)])
+                      :items (-&gt; state :project :source-data)
+                      :on-selected-item-changed {:event/type :select-source-datum}
+                      :pref-width column-width
+                      :row-factory {:fx/cell-type :table-row
+                                    :describe data-tooltip}
+                      :selection-mode :single}]
+              ; target data
+              has-target-data?
+              (conj {:fx/type :table-view
+                     :column-resize-policy :constrained  ; don't show an extra column
+                     :columns [(column-maker :id)
+                               (column-maker :display)]
+                     :items (-&gt; state :project :target-data)
+                     :on-selected-item-changed {:event/type :select-target-datum}
+                     :pref-width column-width
+                     :row-factory {:fx/cell-type :table-row
+                                   :describe data-tooltip}
+                     :selection-mode :single}))}))</pre></td></tr><tr><td class="docs"><p><a id="gui/dialog-view"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>A dialog to display errors etc.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- dialog-view
+  [state]
+  (when-let [dialog (:dialog state)]
+    (case (:type dialog)
+      :error
+      {:fx/type :alert
+       :alert-type :error
+       :button-types [:ok]
+       :content-text (:content-text dialog)
+       :header-text &quot;&quot;
+       :on-close-request {:event/type :close-dialog}
+       :showing true}
+      :progress-indet
+      {:fx/type :stage
+       :scene {:fx/type :scene
+               :root {:fx/type :v-box
+                      :alignment :center
+                      :children [{:fx/type :label
+                                  :text (:message dialog)}
+                                 {:fx/type :progress-bar}
+                                 {:fx/type :button
+                                  :on-action {:event/type :cancel-operation}
+                                  :text &quot;Cancel&quot;}]}}
+       :on-close-request {:event/type :close-dialog}
+       :showing true
+       :width 200})))</pre></td></tr><tr><td class="docs"><p><a id="gui/menu-view"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>A menu bar exposing core functions.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- menu-view
+  [_]
+  {:fx/type :menu-bar
+   :menus [{:fx/type :menu
+            :text &quot;File&quot;
+            :items [{:fx/type :menu-item
+                     :text &quot;Load project&quot;
+                     :accelerator [:shortcut :o]
+                     :on-action (partial load-project nil)}
+                    {:fx/type :menu-item
+                     :text &quot;Reload project&quot;
+                     :accelerator [:shortcut :r]
+                     :disable (nil? (-&gt; @*state :project :filename))
+                     :on-action (partial load-project (-&gt; @*state :project :filename))}
+                    {:fx/type :separator-menu-item}
+                    {:fx/type :menu-item
+                     :text &quot;Quit&quot;
+                     :accelerator [:shortcut :q]
+                     :on-action stop-gui}]}
+           {:fx/type :menu
+            :text &quot;Tree&quot;
+            :items [{:fx/type :menu-item
+                     :text &quot;Print tree&quot;
+                     :accelerator [:shortcut :p]
+                     :disable (nil? (-&gt; @*state :selection :source-data))
+                     :on-action print-tree}]}]})</pre></td></tr><tr><td class="docs"><p><a id="gui/output-view"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>A field display the results.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- output-view
+  [state]
+  {:fx/type :web-view
+   :url (str &quot;data:text/html;charset=utf-8,&quot;
+             &quot;&lt;html&gt;&lt;body style='font-family:monospace;font-size:15px' &quot;
+             &quot;title='&quot; (-&gt; state :output :tooltip) &quot;'&gt;&quot;
+             (-&gt; state :output :text)
+             &quot;&lt;/body&gt;&lt;/html&gt;&quot;)})</pre></td></tr><tr><td class="docs"><p><a id="gui/root-view"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>The root scene.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- root-scene
+  [state]
+  {:fx/type :scene
+   :root {:fx/type :v-box
+          :children [(menu-view state)
+                     {:fx/type :split-pane
+                      :divider-positions [0.5]
+                      :orientation :vertical
+                      :items [(output-view state)
+                              (data-view state)]}]}})</pre></td></tr><tr><td class="docs"><p>The root stage.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- root-view
+  [state]
+  {:fx/type fx/ext-many
+   :desc (cond-&gt; [{:fx/type :stage
+                   :on-close-request {:event/type :close-window}
+                   :scene (root-scene state)
+                   :showing true
+                   :title &quot;SCRepl&quot;
+                   :height (-&gt; state :window :height)
+                   :width (-&gt; state :window :width)}]
+           (:dialog state) (conj (dialog-view state)))})</pre></td></tr><tr><td class="docs"><p><a id="gui/handlers"></a></p>
+
+<h2>Functionality</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Wrappers provide a link between <a href="#screpl.core">screpl.core</a> functions and the GUI. The <a href="#gui/event-handler">event handler</a> reacts to user’s actions in the GUI and dispatches work to the appropriate wrappers, while simultaneously catching errors from <a href="#screpl.core">screpl.core</a>, allowing it to focus on the happy path.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><ul>
+<li><a href="#gui/load-project">load-project</a></li>
+<li><a href="#gui/project-info">project-info</a></li>
+<li><a href="#gui/print-tree">print-tree</a></li>
+<li>[event-handler(#gui/event-handler)</li>
+</ul>
+</td><td class="codes"></td></tr><tr><td class="docs"><p><a id="gui/load-project"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Opens a file chooser dialog.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- chooser-dialog
+  [event]
+  (let [window  (-&gt; event .getTarget .getParentPopup .getOwnerWindow) 
+        chooser (FileChooser.)]
+    (.addAll (.getExtensionFilters chooser)
+             [(FileChooser$ExtensionFilter. &quot;Clojure files (*.clj)&quot; [&quot;*.clj&quot;])
+              (FileChooser$ExtensionFilter. &quot;All files (*.*)&quot; [&quot;*.*&quot;])])
+    (when-let [selected-file (.showOpenDialog chooser window)]
+      (.getAbsolutePath selected-file))))</pre></td></tr><tr><td class="docs"><p>Wrapper around <code>core/load-project</code>.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- load-project
+  [filename     ; open dialog if nil
+   event]
+  (let [fname   (or filename (chooser-dialog event))
+        project (core/load-project fname)]
+    (swap! *state assoc-in [:project :filename] fname)
+    (when (seq (:target-data project))
+      ; resize the window to include target data
+      ; height must be given, and must be different than originally
+      (when (empty? (-&gt; @*state :project :target-data))
+        (swap! *state assoc :window {:height (* column-width 4.1)
+                                     :width (* column-width 3)}))
+      (swap! *state assoc-in [:project :target-data] (:target-data project)))
+    (swap! *state assoc-in [:project :source-data] (:source-data project))
+    (swap! *state assoc-in [:project :sound-changes] (map-indexed
+                                                       (fn [idx itm]
+                                                         (hash-map :active? true
+                                                                 :id idx
+                                                                 :item itm))
+                                                       (:sound-changes project)))))</pre></td></tr><tr><td class="docs"><p><a id="gui/project-info"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Displays basic information about the currently loaded project.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- project-info
+  [filename]
+  (let [scs   (count (-&gt; @*state :project :sound-changes))
+        src   (count (-&gt; @*state :project :source-data))
+        trg   (count (-&gt; @*state :project :target-data))]
+    (str &quot;Project &quot; filename &quot;.\n&quot;
+         &quot;Contains:\n&quot;
+         &quot;  &quot; scs &quot; sound change functions,\n&quot;
+         &quot;  &quot; src &quot; source data items,\n&quot;
+         &quot;  &quot; (if (= 0 trg)
+                &quot;no target data.&quot;
+                (str trg &quot; target data items.&quot;)))))</pre></td></tr><tr><td class="docs"><p><a id="gui/project-info"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Format a tooltip with basic statistics of a tree.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- format-tooltip
+  [tree
+   counts]
+  (let [linebreak &quot;%26%2310%3B&quot;]  ; (java.net.URLEncoder/encode &quot;&amp;#10;&quot;)
+    (str &quot;A tree from \&quot;&quot; (-&gt; ((:tree-fn tree)) first :display) &quot;\&quot; through&quot; linebreak
+         &quot;  &quot; (:fn-count tree) &quot; sound changes, with&quot; linebreak
+         &quot;  &quot; (format &quot;%,d&quot; (:nodes counts)) &quot; nodes and&quot; linebreak
+         &quot;  &quot; (format &quot;%,d&quot; (:leaves counts)) &quot; leaves.&quot;)))</pre></td></tr><tr><td class="docs"><p>Wrapper around <code>core/grow-tree</code> and then <code>core/print-tree</code>.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- print-tree
+  [_]
+  (let [fns       (-&gt;&gt; @*state :project :sound-changes (filter :active?) (map :item))
+        val       (-&gt; @*state :selection :source-data)
+        tree      (core/grow-tree fns val)
+        counter   (atom 0)
+        output-ch (async/chan 12)]  ; 12 is just to make sure nothing has to wait
+    ; listen for output
+    (async/go-loop
+      []
+      (when-let [output (async/&lt;! output-ch)]
+        (case (:status output)
+          :cancelled   (do
+                         (swap! *state assoc-in [:output :text] str
+                                &quot;&lt;span style='color:white;background-color:crimson;'&gt;Cancelled.&lt;/span&gt;&quot;)
+                         (swap! *state assoc :dialog nil))
+          :completed   (swap! *state assoc :dialog nil)     ; close the dialog
+          :in-progress (do
+                        (swap! *state update-in [:output :text] str (:output output))
+                        (swap! counter inc)
+                        (when (= 0 (mod @counter progress-step))
+                          (swap! *state assoc-in [:dialog :message]
+                                 (str &quot;Printed &quot; (format &quot;%,d&quot; @counter) &quot; lines...&quot;)))
+                        (recur))
+          (throw (ex-info (str &quot;An error in print-tree that shouldn't have happened. `output`=&quot; output) {}))))) 
+    ; run `core/print-tree`
+    (async/go
+      (message :progress-indet)                    ; open dialog
+      (swap! *state assoc-in [:output :text] &quot;&quot;)   ; wipe `output-view`
+      (let [counts (core/print-tree tree cancel-ch output-ch)]      ; actually run
+        (swap! *state assoc-in [:output :tooltip] (format-tooltip tree @counts)))   ; tooltip
+      (async/close! output-ch))))                  ; clean up</pre></td></tr><tr><td class="docs"><p><a id="gui/event-handler"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Reacts to user’s actions in the GUI and dispatches work to other functions. At the same time, catches errors and redirects them to <code>message</code>.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- event-handler
+  [event]
+  (try
+    (case (:event/type event)
+      ; selections
+      :select-source-datum (swap! *state assoc-in [:selection :source-data] (:fx/event event))
+      :select-target-datum (swap! *state assoc-in [:selection :target-data] (:fx/event event))
+      ; other
+      :cancel-operation (async/&gt;!! cancel-ch :cancel)
+      :close-dialog (swap! *state assoc :dialog nil)
+      :close-window (stop-gui nil))
+    (catch Exception e (message :error e))))</pre></td></tr><tr><td class="docs"><p><a id="gui/other"></a></p>
+
+<h2>Other</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>The more technical parts: managing the GUI, and displaying dialogs.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><ul>
+<li><a href="#gui/message">message</a></li>
+<li><a href="#gui/renderer">renderer</a></li>
+<li><a href="#gui/start-gui">start-gui</a></li>
+<li><a href="#gui/stop-gui">stop-gui</a></li>
+</ul>
+</td><td class="codes"></td></tr><tr><td class="docs"><p><a id="gui/message"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Displays a dialog with a message.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- message
+  [type          ; :error, :progress-indet
+   &amp; messages]   ; an Exception when :error, string(s) or number(s) otherwise
+  (case type
+    :error          (let [err      (-&gt; messages first Throwable-&gt;map)
+                          data     (:data err)
+                          location (cond-&gt; []
+                                     (:filename data) (conj (str &quot; in &quot; (:filename data)))
+                                     (:index data)    (conj (str &quot; in item &quot; (:index data)))
+                                     (:display data)  (conj (str &quot; (&quot; (:display data) &quot;)&quot;))
+                                     (:field data)    (conj (str &quot; in &quot; (:field data))))]
+                      (swap! *state assoc :dialog
+                             {:type :error
+                              :content-text (str &quot;Error&quot; (apply str location) &quot;:\n&quot; (:cause err))}))
+    :progress-indet (swap! *state assoc :dialog
+                           {:type :progress-indet
+                            :message &quot;Processing...&quot;})))</pre></td></tr><tr><td class="docs"><p><a id="gui/renderer"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>A layer of abstraction that takes care of the changing state. See https://github.com/cljfx/cljfx?tab=readme-ov-file#renderer </p>
+</td><td class="codes"><pre class="brush: clojure">(def renderer
+  (fx/create-renderer
+    :middleware (fx/wrap-map-desc root-view)
+    ; improved errors; see https://github.com/cljfx/dev
+    :error-handler (bound-fn [^Throwable ex] (.printStackTrace ^Throwable ex *err*))
+    :opts {:fx.opt/map-event-handler event-handler 
+           ; improved errors; see https://github.com/cljfx/dev
+           :fx.opt/type-&gt;lifecycle @(requiring-resolve 'cljfx.dev/type-&gt;lifecycle)}))</pre></td></tr><tr><td class="docs"><p><a id="gui/start-gui"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Start the GUI</p>
+</td><td class="codes"><pre class="brush: clojure">(defn ^:export start-gui
+  []
+  (fx/mount-renderer *state renderer))</pre></td></tr><tr><td class="docs"><p><a id="gui/stop-gui"></a></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Stop the GUI.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn ^:export stop-gui
+  [_]
+  (async/close! cancel-ch)
+  (fx/unmount-renderer *state renderer))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(start-gui)</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#screpl.main" name="screpl.main"><h1 class="project-name">screpl.main</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>The entry point to SCRepl.</p>
 
 <p>Its only purpose is to start the UI.</p>
 </td><td class="codes"></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(ns screpl.main
   (:gen-class)
-  (:require [screpl.cli :as cli]))  ; main -&gt; cli -&gt; core</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defn -main []
-  (cli/start-repl))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr></table><div class="footer">Generated by <a href="https://github.com/clj-commons/marginalia">Marginalia</a>.&nbsp;&nbsp;Syntax highlighting provided by Alex Gorbatchev's <a href="http://alexgorbatchev.com/SyntaxHighlighter/">SyntaxHighlighter</a><div id="floating-toc"><ul><li class="floating-toc-li" id="floating-toc_screpl.cli">screpl.cli</li><li class="floating-toc-li" id="floating-toc_screpl.core">screpl.core</li><li class="floating-toc-li" id="floating-toc_screpl.main">screpl.main</li></ul></div></div><script type="text/javascript">SyntaxHighlighter.defaults['gutter'] = false;
+  (:require [screpl.gui :as gui]))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr></table><div class="footer">Generated by <a href="https://github.com/clj-commons/marginalia">Marginalia</a>.&nbsp;&nbsp;Syntax highlighting provided by Alex Gorbatchev's <a href="http://alexgorbatchev.com/SyntaxHighlighter/">SyntaxHighlighter</a><div id="floating-toc"><ul><li class="floating-toc-li" id="floating-toc_screpl.cli">screpl.cli</li><li class="floating-toc-li" id="floating-toc_screpl.core">screpl.core</li><li class="floating-toc-li" id="floating-toc_screpl.gui">screpl.gui</li><li class="floating-toc-li" id="floating-toc_screpl.main">screpl.main</li></ul></div></div><script type="text/javascript">SyntaxHighlighter.defaults['gutter'] = false;
 SyntaxHighlighter.all();
 
 // hackity hack

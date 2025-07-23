@@ -18,7 +18,7 @@
 ;; <a id="gui/globals"></a>
 ;; ## Global variables
 
-(declare load-project message print-tree project-info stop-gui)
+(declare load-project message print-paths print-tree stop-gui)
 
 ;; Used to pass `:cancel` messages to `core` functions.
 (def cancel-ch (async/chan))
@@ -37,7 +37,8 @@
          :output {:text ""
                   :tooltip "No results yet."}
          ; project
-         :project {:sound-changes []
+         :project {:filename nil
+                   :sound-changes []
                    :source-data []}
          ; selections (handled by [event-handler](#gui/event-handler)
          :selection {:source-data nil
@@ -241,7 +242,12 @@
             :items [{:fx/type :menu-item
                      :text "Load project"
                      :accelerator [:shortcut :o]
-                     :on-action load-project}
+                     :on-action (partial load-project nil)}
+                    {:fx/type :menu-item
+                     :text "Reload project"
+                     :accelerator [:shortcut :r]
+                     :disable (nil? (-> @*state :project :filename))
+                     :on-action (partial load-project (-> @*state :project :filename))}
                     {:fx/type :separator-menu-item}
                     {:fx/type :menu-item
                      :text "Quit"
@@ -251,8 +257,14 @@
             :text "Tree"
             :items [{:fx/type :menu-item
                      :text "Print tree"
+                     :accelerator [:shortcut :p]
                      :disable (nil? (-> @*state :selection :source-data))
-                     :on-action print-tree}]}]})
+                     :on-action print-tree}
+                    {:fx/type :menu-item
+                     :text "Print paths"
+                     :accelerator [:shortcut :z]
+                     :disable (nil? (-> @*state :selection :source-data))
+                     :on-action print-paths}]}]})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - output ------------------------------------------------------------------------------------- {{{ -
@@ -310,7 +322,7 @@
 ;; Wrappers provide a link between [screpl.core](#screpl.core) functions and the GUI. The [event handler](#gui/event-handler) reacts to user’s actions in the GUI and dispatches work to the appropriate wrappers, while simultaneously catching errors from [screpl.core](#screpl.core), allowing it to focus on the happy path.
 
 ;; - [load-project](#gui/load-project)
-;; - [project-info](#gui/project-info)
+;; - [print-paths](#gui/print-paths)
 ;; - [print-tree](#gui/print-tree)
 ;; - [event-handler(#gui/event-handler)
 
@@ -318,52 +330,73 @@
 
 ;; <a id="gui/load-project"></a>
 
-(defn- load-project
-  "Wrapper around `core/load-project`."
+(defn- chooser-dialog
+  "Opens a file chooser dialog."
   [event]
-  ; prepare a file chooser window
-  (let [window        (-> event .getTarget .getParentPopup .getOwnerWindow) 
-        file-chooser  (FileChooser.)]
-    (.addAll (.getExtensionFilters file-chooser)
+  (let [window  (-> event .getTarget .getParentPopup .getOwnerWindow) 
+        chooser (FileChooser.)]
+    (.addAll (.getExtensionFilters chooser)
              [(FileChooser$ExtensionFilter. "Clojure files (*.clj)" ["*.clj"])
               (FileChooser$ExtensionFilter. "All files (*.*)" ["*.*"])])
-    ; wait for file selection
-    (when-let [selected-file (.showOpenDialog file-chooser window)]
-      (let [project (core/load-project (.getAbsolutePath selected-file))]
-        (when (seq (:target-data project))
-          ; resize the window to include target data
-          ; height must be given, and must be different than originally
-          (when (empty? (-> @*state :project :target-data))
-            (swap! *state assoc :window {:height (* column-width 4.1)
-                                         :width (* column-width 3)}))
-          (swap! *state assoc-in [:project :target-data] (:target-data project)))
-        (swap! *state assoc-in [:project :source-data] (:source-data project))
-        (swap! *state assoc-in [:project :sound-changes] (map-indexed
-                                                          (fn [idx itm]
-                                                            (hash-map :active? true
-                                                                      :id idx
-                                                                      :item itm))
-                                                          (:sound-changes project)))))))
-        ; (swap! *state assoc-in [:buttons :load-project :tooltip :text] (project-info selected-file))))))
+    (when-let [selected-file (.showOpenDialog chooser window)]
+      (.getAbsolutePath selected-file))))
+
+(defn- load-project
+  "Wrapper around `core/load-project`."
+  [filename     ; open dialog if nil
+   event]
+  (let [
+        ; fname   (or filename (chooser-dialog event))
+        fname   "/home/kamil/screpl/doc/sample-project.clj"
+        project (core/load-project fname)]
+    (swap! *state assoc-in [:project :filename] fname)
+    (when (seq (:target-data project))
+      ; resize the window to include target data
+      ; height must be given, and must be different than originally
+      (when (empty? (-> @*state :project :target-data))
+        (swap! *state assoc :window {:height (* column-width 4.1)
+                                     :width (* column-width 3)}))
+      (swap! *state assoc-in [:project :target-data] (:target-data project)))
+    (swap! *state assoc-in [:project :source-data] (:source-data project))
+    (swap! *state assoc-in [:project :sound-changes] (map-indexed
+                                                       (fn [idx itm]
+                                                         (hash-map :active? true
+                                                                 :id idx
+                                                                 :item itm))
+                                                       (:sound-changes project)))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
-; - project-info ------------------------------------------------------------------------------- {{{ -
+; - print-paths -------------------------------------------------------------------------------- {{{ -
 
-;; <a id="gui/project-info"></a>
+;; <a id="gui/project-paths"></a>
 
-(defn- project-info
-  "Displays basic information about the currently loaded project."
-  [filename]
-  (let [scs   (count (-> @*state :project :sound-changes))
-        src   (count (-> @*state :project :source-data))
-        trg   (count (-> @*state :project :target-data))]
-    (str "Project " filename ".\n"
-         "Contains:\n"
-         "  " scs " sound change functions,\n"
-         "  " src " source data items,\n"
-         "  " (if (= 0 trg)
-                "no target data."
-                (str trg " target data items.")))))
+(defn- print-paths
+  "Wrapper around `core/grow-tree` and then `core/find-paths`."
+  [_]
+  (let [fns       (->> @*state :project :sound-changes (filter :active?) (map :item))
+        val       (-> @*state :selection :source-data)
+        tree      (core/grow-tree fns val)
+        output-ch (async/chan 12)]  ; 12 is just to make sure nothing has to wait
+    ; listen for output
+    (async/go-loop []
+      (when-let [output (async/<! output-ch)]
+        (case (:status output)
+          :cancelled   (do
+                         (swap! *state update-in [:output :text] str
+                                "<span style='color:white;background-color:crimson;'>Cancelled.</span>")
+                         (swap! *state assoc :dialog nil))
+          :completed   (swap! *state assoc :dialog nil)     ; close the dialog
+          :in-progress (do
+                         (println output)
+                         (swap! *state update-in [:output :text] str (:output output))
+                         (recur))
+          (throw (ex-info (str "An error in print-paths that shouldn't have happened. `output`=" output) {}))))) 
+    ; run `core/find-paths
+    (async/go
+      (message :progress-indet)                                     ; open dialog
+      (swap! *state assoc :output {:text "", :tooltip ""})          ; wipe `output-view`
+      (core/find-paths tree #"a" cancel-ch output-ch)      ; actually run the thing
+      (async/close! output-ch))))                                   ; clean up
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-tree --------------------------------------------------------------------------------- {{{ -
@@ -389,12 +422,11 @@
         counter   (atom 0)
         output-ch (async/chan 12)]  ; 12 is just to make sure nothing has to wait
     ; listen for output
-    (async/go-loop
-      []
+    (async/go-loop []
       (when-let [output (async/<! output-ch)]
         (case (:status output)
           :cancelled   (do
-                         (swap! *state assoc-in [:output :text] str
+                         (swap! *state update-in [:output :text] str
                                 "<span style='color:white;background-color:crimson;'>Cancelled.</span>")
                          (swap! *state assoc :dialog nil))
           :completed   (swap! *state assoc :dialog nil)     ; close the dialog
@@ -408,11 +440,11 @@
           (throw (ex-info (str "An error in print-tree that shouldn't have happened. `output`=" output) {}))))) 
     ; run `core/print-tree`
     (async/go
-      (message :progress-indet)                    ; open dialog
-      (swap! *state assoc-in [:output :text] "")   ; wipe `output-view`
-      (let [counts (core/print-tree tree cancel-ch output-ch)]      ; actually run
+      (message :progress-indet)                                     ; open dialog
+      (swap! *state assoc :output {:text "", :tooltip ""})          ; wipe `output-view`
+      (let [counts (core/print-tree tree cancel-ch output-ch)]      ; actually run the thing
         (swap! *state assoc-in [:output :tooltip] (format-tooltip tree @counts)))   ; tooltip
-      (async/close! output-ch))))                  ; clean up
+      (async/close! output-ch))))                                   ; clean up
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 

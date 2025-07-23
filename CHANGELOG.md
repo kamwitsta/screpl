@@ -1,6 +1,17 @@
 # Change Log
 ------------
 
+## [0.3.0]
+----------
+### Added
+- GUI
+
+### Changed
+- API of: core/find-paths, core/print-tree (also formatting changed)
+
+### Removed
+- CLI
+
 
 ## [0.2.0] – 2025-06-16
 -----------------------

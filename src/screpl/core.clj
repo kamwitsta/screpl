@@ -407,20 +407,26 @@
   "Finds paths, in a `screpl.core/Tree`, from the root to leaves matching a regular expression."
   [^Tree tree    ; find in this tree
    re            ; paths to leaves that match this regexp
-   progressbar]  ; display progress through this fn
-  (let [progress! (progressbar "leaves" 10000)
-        tree'     ((:tree-fn tree))]
-    (letfn [(find-paths-hlp [elem path]
+   cancel-ch     ; listen for cancellation here
+   output-ch]    ; display progress through this ch
+  (letfn [(find-paths-hlp [elem path]
+            (if (some? (async/poll! cancel-ch))
+              (do (async/>!! output-ch {:status :cancelled}) []) ; the next iteration wants a list
+              ; if not cancelled
               (let [value (-> elem first :display)]
                 (lazy-seq
                   (if (node? elem)
+                    ; node
                     (mapcat #(find-paths-hlp % (conj path value))
                            (children elem))
-                    (do
-                      (progress!)
-                      (when (re-find re value)
-                        [(conj path value)]))))))]
-      (find-paths-hlp tree' []))))
+                    ; leaf
+                    (when (re-find re value)
+                      (let [found-path (conj path value)]
+                        (async/>!! output-ch {:status :in-progress
+                                              :output found-path})
+                        [found-path])))))))]
+    (dorun (find-paths-hlp ((:tree-fn tree)) []))
+    (async/>!! output-ch {:status :completed})))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - grow-tree ---------------------------------------------------------------------------------- {{{ -

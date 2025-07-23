@@ -6,5 +6,5 @@
   (:gen-class)
   (:require [screpl.gui :as gui]))
 
-; (defn -main []
-  ; (gui/start-gui))
+(defn -main []
+  (gui/start-gui))

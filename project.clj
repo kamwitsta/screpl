@@ -5,13 +5,11 @@
             :url "https://creativecommons.org/licenses/by-nc-sa/4.0/"}
   :dependencies [[org.clojure/clojure "1.12.0"]
                  ; data upload
+                 [org.babashka/sci "0.9.45"]
                  [io.github.tonsky/fast-edn "1.1.2"]
                  [metosin/malli "0.17.0"]
                  [org.mariadb.jdbc/mariadb-java-client "3.5.3"]
                  [io.github.camsaul/toucan2 "1.0.565"] 
-                 ; cli
-                 [clansi "1.0.0"]
-                 [org.babashka/sci "0.9.45"]
                  ; gui
                  [cljfx "1.9.5"]
                  [org.clojure/core.async "1.8.741"]]
