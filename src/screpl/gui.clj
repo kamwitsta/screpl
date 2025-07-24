@@ -24,9 +24,10 @@
 (def cancel-ch (async/chan))
 
 ;; The width of the views in [data-view](#gui/data-view).
+;; Also used to derive window size.
 (def column-width 200)
 
-;; Update the progress bar after every ... steps.
+;; Update the progress bar after every … steps.
 (def progress-step 1000)
 
 (def ^:dynamic *state
@@ -158,7 +159,7 @@
 (defn- data-view
   "Tables displaying sound changes and data."
   [state]
-  (let [has-target-data? (seq (-> state :project :target-data))]
+  (let [has-target-data? (some? (-> state :project :target-data))]
     {:fx/type :split-pane
      :divider-positions (if has-target-data? [0.333 0.666] [0.5])
      :items (cond-> [; sound changes
@@ -174,7 +175,7 @@
                                   (column-maker :display)]
                                  [(column-maker :display)])
                       :items (-> state :project :source-data)
-                      :on-selected-item-changed {:event/type :select-source-datum}
+                      :on-selected-item-changed {:event/type ::select-source-datum}
                       :pref-width column-width
                       :row-factory {:fx/cell-type :table-row
                                     :describe data-tooltip}
@@ -186,7 +187,7 @@
                      :columns [(column-maker :id)
                                (column-maker :display)]
                      :items (-> state :project :target-data)
-                     :on-selected-item-changed {:event/type :select-target-datum}
+                     :on-selected-item-changed {:event/type ::select-target-datum}
                      :pref-width column-width
                      :row-factory {:fx/cell-type :table-row
                                    :describe data-tooltip}
@@ -208,25 +209,34 @@
       {:fx/type :alert
        :alert-type :error
        :button-types [:ok]
-       :content-text (:content-text dialog)
+       :content-text (:message dialog)
        :header-text ""
-       :on-close-request {:event/type :close-dialog}
+       :on-close-request {:event/type ::close-dialog}
        :showing true}
 
       :progress-indet
       {:fx/type :stage
+       :modality :application-modal     ; block the main window
        :scene {:fx/type :scene
                :root {:fx/type :v-box
                       :alignment :center
+                      :spacing 6
                       :children [{:fx/type :label
                                   :text (:message dialog)}
-                                 {:fx/type :progress-bar}
+                                 {:fx/type :progress-indicator
+                                  :max-height 24
+                                  :max-width 24
+                                  :min-height 24
+                                  :min-width 24
+                                  :progress -1}
                                  {:fx/type :button
-                                  :on-action {:event/type :cancel-operation}
+                                  :on-action {:event/type ::cancel-operation}
                                   :text "Cancel"}]}}
-       :on-close-request {:event/type :close-dialog}
+       :on-close-request {:event/type ::cancel-operation}
        :showing true
-       :width 200})))
+       :width 200}
+
+      (throw (ex-info (str "An error in dialog-view that shouldn't have happened. `state`=" state) {})))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - menu --------------------------------------------------------------------------------------- {{{ -
@@ -242,12 +252,12 @@
             :items [{:fx/type :menu-item
                      :text "Load project"
                      :accelerator [:shortcut :o]
-                     :on-action (partial load-project nil)}
+                     :on-action {:event/type ::load-project}}
                     {:fx/type :menu-item
                      :text "Reload project"
                      :accelerator [:shortcut :r]
                      :disable (nil? (-> @*state :project :filename))
-                     :on-action (partial load-project (-> @*state :project :filename))}
+                     :on-action {:event/type ::reload-project}}
                     {:fx/type :separator-menu-item}
                     {:fx/type :menu-item
                      :text "Quit"
@@ -259,12 +269,12 @@
                      :text "Print tree"
                      :accelerator [:shortcut :p]
                      :disable (nil? (-> @*state :selection :source-data))
-                     :on-action print-tree}
+                     :on-action {:event/type ::print-tree}}
                     {:fx/type :menu-item
                      :text "Print paths"
                      :accelerator [:shortcut :z]
                      :disable (nil? (-> @*state :selection :source-data))
-                     :on-action print-paths}]}]})
+                     :on-action {:event/type ::print-paths}}]}]})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - output ------------------------------------------------------------------------------------- {{{ -
@@ -293,6 +303,8 @@
    :root {:fx/type :v-box
           :children [(menu-view state)
                      {:fx/type :split-pane
+                      ; ↓ forces the recreation of the layout after the data (and in consequence, window size) changes
+                      :fx/key (some? (-> state :project :target-data))
                       :divider-positions [0.5]
                       :orientation :vertical
                       :items [(output-view state)
@@ -303,7 +315,7 @@
   [state]
   {:fx/type fx/ext-many
    :desc (cond-> [{:fx/type :stage
-                   :on-close-request {:event/type :close-window}
+                   :on-close-request {:event/type ::close-window}
                    :scene (root-scene state)
                    :showing true
                    :title "SCRepl"
@@ -333,7 +345,7 @@
 (defn- chooser-dialog
   "Opens a file chooser dialog."
   [event]
-  (let [window  (-> event .getTarget .getParentPopup .getOwnerWindow) 
+  (let [window  (-> event :fx/event .getTarget .getParentPopup .getOwnerWindow) 
         chooser (FileChooser.)]
     (.addAll (.getExtensionFilters chooser)
              [(FileChooser$ExtensionFilter. "Clojure files (*.clj)" ["*.clj"])
@@ -343,20 +355,23 @@
 
 (defn- load-project
   "Wrapper around `core/load-project`."
-  [filename     ; open dialog if nil
-   event]
+  [event
+   filename]     ; open dialog if nil
+  ; get the filename, from the event handler, or from a dialog
   (let [
         ; fname   (or filename (chooser-dialog event))
         fname   "/home/kamil/screpl/doc/sample-project.clj"
         project (core/load-project fname)]
     (swap! *state assoc-in [:project :filename] fname)
-    (when (seq (:target-data project))
-      ; resize the window to include target data
-      ; height must be given, and must be different than originally
-      (when (empty? (-> @*state :project :target-data))
-        (swap! *state assoc :window {:height (* column-width 4.1)
-                                     :width (* column-width 3)}))
-      (swap! *state assoc-in [:project :target-data] (:target-data project)))
+    ; change the width of the window to accomodate target data
+    ; both height and width must be given, and
+    ; both must at least simulate change to trigger cljfx's watch on *state
+    (swap! *state assoc-in [:window :width] (* column-width (if (:target-data project) 3 2)))
+    (swap! *state update-in [:window :height] (fnil inc 0))
+    ; load data into *state
+    (if (:target-data project)
+        (swap! *state assoc-in [:project :target-data] (:target-data project))
+        (swap! *state update :project dissoc :target-data))
     (swap! *state assoc-in [:project :source-data] (:source-data project))
     (swap! *state assoc-in [:project :sound-changes] (map-indexed
                                                        (fn [idx itm]
@@ -375,7 +390,8 @@
   [_]
   (let [fns       (->> @*state :project :sound-changes (filter :active?) (map :item))
         val       (-> @*state :selection :source-data)
-        tree      (core/grow-tree fns val)
+        tree      (core/grow-tree (flatten (repeat 5 fns)) val)
+        counter   (atom 0)
         output-ch (async/chan 12)]  ; 12 is just to make sure nothing has to wait
     ; listen for output
     (async/go-loop []
@@ -387,8 +403,11 @@
                          (swap! *state assoc :dialog nil))
           :completed   (swap! *state assoc :dialog nil)     ; close the dialog
           :in-progress (do
-                         (println output)
                          (swap! *state update-in [:output :text] str (:output output))
+                         (swap! counter inc)
+                         (when (= 0 (mod @counter progress-step))
+                           (swap! *state assoc-in [:dialog :message]
+                                  (str "Checked " (format "%,d" @counter) " nodes/leaves…")))
                          (recur))
           (throw (ex-info (str "An error in print-paths that shouldn't have happened. `output`=" output) {}))))) 
     ; run `core/find-paths
@@ -431,12 +450,12 @@
                          (swap! *state assoc :dialog nil))
           :completed   (swap! *state assoc :dialog nil)     ; close the dialog
           :in-progress (do
-                        (swap! *state update-in [:output :text] str (:output output))
-                        (swap! counter inc)
-                        (when (= 0 (mod @counter progress-step))
-                          (swap! *state assoc-in [:dialog :message]
-                                 (str "Printed " (format "%,d" @counter) " lines...")))
-                        (recur))
+                         (swap! *state update-in [:output :text] str (:output output))
+                         (swap! counter inc)
+                         (when (= 0 (mod @counter progress-step))
+                           (swap! *state assoc-in [:dialog :message]
+                                  (str "Printed " (format "%,d" @counter) " lines…")))
+                         (recur))
           (throw (ex-info (str "An error in print-tree that shouldn't have happened. `output`=" output) {}))))) 
     ; run `core/print-tree`
     (async/go
@@ -447,7 +466,6 @@
       (async/close! output-ch))))                                   ; clean up
 
 ; ---------------------------------------------------------------------------------------------- }}} -
-
 ; - event-handler ------------------------------------------------------------------------------ {{{ -
 
 ;; <a id="gui/event-handler"></a>
@@ -457,13 +475,21 @@
   [event]
   (try
     (case (:event/type event)
+
+      ; wrappers (must be here so errors are caught)
+      ::load-project (load-project event nil)
+      ::print-paths (print-paths nil)
+      ::print-tree (print-tree nil)
+      ::reload-project (load-project event (-> @*state :project :filename))
+
       ; selections
-      :select-source-datum (swap! *state assoc-in [:selection :source-data] (:fx/event event))
-      :select-target-datum (swap! *state assoc-in [:selection :target-data] (:fx/event event))
+      ::select-source-datum (swap! *state assoc-in [:selection :source-data] (:fx/event event))
+      ::select-target-datum (swap! *state assoc-in [:selection :target-data] (:fx/event event))
+
       ; other
-      :cancel-operation (async/>!! cancel-ch :cancel)
-      :close-dialog (swap! *state assoc :dialog nil)
-      :close-window (stop-gui nil))
+      ::cancel-operation (async/>!! cancel-ch :cancel)
+      ::close-dialog (swap! *state assoc :dialog nil)
+      ::close-window (stop-gui nil))
     (catch Exception e (message :error e))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -499,10 +525,10 @@
                                      (:field data)    (conj (str " in " (:field data))))]
                       (swap! *state assoc :dialog
                              {:type :error
-                              :content-text (str "Error" (apply str location) ":\n" (:cause err))}))
+                              :message (str "Error" (apply str location) ":\n" (:cause err))}))
     :progress-indet (swap! *state assoc :dialog
                            {:type :progress-indet
-                            :message "Processing..."})))
+                            :message "Processing…"})))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
