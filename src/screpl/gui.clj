@@ -390,7 +390,7 @@
   [_]
   (let [fns       (->> @*state :project :sound-changes (filter :active?) (map :item))
         val       (-> @*state :selection :source-data)
-        tree      (core/grow-tree (flatten (repeat 5 fns)) val)
+        tree      (core/grow-tree fns val)
         counter   (atom 0)
         output-ch (async/chan 12)]  ; 12 is just to make sure nothing has to wait
     ; listen for output
@@ -403,11 +403,12 @@
                          (swap! *state assoc :dialog nil))
           :completed   (swap! *state assoc :dialog nil)     ; close the dialog
           :in-progress (do
-                         (swap! *state update-in [:output :text] str (:output output))
+                         (swap! *state update-in [:output :text] str
+                                (string/join " > " (:output output)) "<br>")
                          (swap! counter inc)
                          (when (= 0 (mod @counter progress-step))
                            (swap! *state assoc-in [:dialog :message]
-                                  (str "Checked " (format "%,d" @counter) " nodes/leaves…")))
+                                  (str "Checked " (format "%,d" @counter) " leaves…")))
                          (recur))
           (throw (ex-info (str "An error in print-paths that shouldn't have happened. `output`=" output) {}))))) 
     ; run `core/find-paths
