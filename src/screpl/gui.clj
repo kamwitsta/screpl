@@ -1,16 +1,19 @@
 ;; A JavaFX user interface.
 
 ;; 1. [Global variables](#gui/globals)
-;; 2. [Parts of the interface](#gui/views)
-;; 3. [Functionality](#gui/handlers)
-;; 4. [Other](#gui/other)
+;; 2. [General utility functions](#gui/general)
+;; 3. [Parts of the interface](#gui/views)
+;; 4. [Functionality](#gui/handlers)
+;; 5. [Other](#gui/other)
 
 (ns screpl.gui
   (:require [cljfx.api :as fx]
             [clojure.core.async :as async]
+            [clojure.java.browse :as browse]
             [clojure.string :as string]
             [screpl.core :as core])
-  (:import [javafx.stage FileChooser FileChooser$ExtensionFilter]))
+  (:import [javafx.stage FileChooser FileChooser$ExtensionFilter]
+           [com.mifmif.common.regex Generex]))
 
 
 ; = globals ==================================================================================== {{{ =
@@ -18,7 +21,7 @@
 ;; <a id="gui/globals"></a>
 ;; ## Global variables
 
-(declare load-project message print-paths print-tree stop-gui)
+(declare load-project message print-paths print-tree stop-gui unescape-unicode)
 
 ;; Used to pass `:cancel` messages to `core` functions.
 (def cancel-ch (async/chan))
@@ -37,16 +40,42 @@
          ; output
          :output {:text ""
                   :tooltip "No results yet."}
+         ; paths
+         :paths-view {:pattern ""
+                      :showing true}
          ; project
          :project {:filename nil
                    :sound-changes []
                    :source-data []}
          ; selections (handled by [event-handler](#gui/event-handler)
-         :selection {:source-data nil
-                     :target-data nil}
+         :selection {:source-data nil}
          ; window
          :window {:height (* column-width 4)
                   :width (* column-width 2)}}))
+
+; ============================================================================================== }}} =
+; = general ==================================================================================== {{{ =
+
+;; <a id="gui/general"></a>
+;; ## General utility functions
+
+(defn- sample-strings
+  "Generate strings that match a pattern (given as a String)."
+  [pattern    ; match this pattern
+   n]        ; return this many samples
+  (str "Sample matching strings:\n  "
+     (let [grx (Generex. (unescape-unicode pattern))]
+       (->> (repeatedly #(.random grx))
+            (take n)
+            (string/join "\n  ")))))
+
+(defn unescape-unicode
+  "Convert Unicode escape sequence to actual character."
+  ; Generex can't do it on its own.
+  [s]
+  (string/replace s #"\\u([0-9a-fA-F]{4})" 
+                   (fn [[_ hex-digits]]
+                     (str (char (Integer/parseInt hex-digits 16))))))
 
 ; ============================================================================================== }}} =
 ; = views ====================================================================================== {{{ =
@@ -60,6 +89,7 @@
 ;; - [dialog](#gui/dialog-view)
 ;; - [menu](#gui/menu-view)
 ;; - [output](#gui/output-view)
+;; - [paths](#gui/paths-view)
 ;; - [root](#gui/root-view)
 
 ; - data --------------------------------------------------------------------------------------- {{{ -
@@ -187,7 +217,6 @@
                      :columns [(column-maker :id)
                                (column-maker :display)]
                      :items (-> state :project :target-data)
-                     :on-selected-item-changed {:event/type ::select-target-datum}
                      :pref-width column-width
                      :row-factory {:fx/cell-type :table-row
                                    :describe data-tooltip}
@@ -266,15 +295,14 @@
            {:fx/type :menu
             :text "Tree"
             :items [{:fx/type :menu-item
-                     :text "Print tree"
-                     :accelerator [:shortcut :p]
-                     :disable (nil? (-> @*state :selection :source-data))
-                     :on-action {:event/type ::print-tree}}
+                     :text "Paths"
+                     :accelerator [:shortcut :f]
+                     :on-action {:event/type ::toggle-paths-view}}
                     {:fx/type :menu-item
-                     :text "Print paths"
-                     :accelerator [:shortcut :z]
+                     :text "Print tree"
+                     :accelerator [:shortcut :t]
                      :disable (nil? (-> @*state :selection :source-data))
-                     :on-action {:event/type ::print-paths}}]}]})
+                     :on-action {:event/type ::print-tree}}]}]})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - output ------------------------------------------------------------------------------------- {{{ -
@@ -290,6 +318,84 @@
              "title='" (-> state :output :tooltip) "'>"
              (-> state :output :text)
              "</body></html>")})
+
+; ---------------------------------------------------------------------------------------------- }}} -
+; - paths -------------------------------------------------------------------------------------- {{{ -
+
+;; <a id="gui/paths-view"></a>
+
+(defn- paths-view
+  "A window with controls for path finding."
+  [state]
+  {:fx/type :stage
+   :on-close-request {:event/type ::close-paths-view}
+   :scene {:fx/type :scene
+           :on-key-pressed {:event/type ::close-paths-view-maybe}
+           :root {:fx/type :v-box
+                  :padding 6
+                  :spacing 6
+                  :children [{:fx/type :text-field
+                              :on-text-changed {:event/type ::change-paths-pattern}}
+                             {:fx/type :label
+                              :text (sample-strings (-> state :paths-view :pattern) 3)}
+                             {:fx/type :separator}
+                             {:fx/type :h-box
+                              :spacing 6
+                              :children [{:fx/type :v-box
+                                          :children [{:fx/type :label
+                                                      :text "\\u000"}
+                                                     {:fx/type :label
+                                                      :text "[abc]"}
+                                                     {:fx/type :label
+                                                      :text "[^abc]"}
+                                                     {:fx/type :label
+                                                      :text "[a-zA-Z]"}
+                                                     {:fx/type :label
+                                                      :text "(ab|cd)"}
+                                                     {:fx/type :label
+                                                      :text "X?"}
+                                                     {:fx/type :label
+                                                      :text "X+"}
+                                                     {:fx/type :label
+                                                      :text "^X"}
+                                                     {:fx/type :label
+                                                      :text "X$"}]}
+                                         {:fx/type :v-box
+                                          :children [{:fx/type :label
+                                                      :text "Unicode character"}
+                                                     {:fx/type :label
+                                                      :text "a, b, or c"}
+                                                     {:fx/type :label
+                                                      :text "not a, b, or c"}
+                                                     {:fx/type :label
+                                                      :text "a through z or A through Z"}
+                                                     {:fx/type :label
+                                                      :text "ab, or cd"}
+                                                     {:fx/type :label
+                                                      :text "X, once or not at all"}
+                                                     {:fx/type :label
+                                                      :text "X, one or more times"}
+                                                     {:fx/type :label
+                                                      :text "X, at the beginning"}
+                                                     {:fx/type :label
+                                                      :text "X, at the end"}]}]}
+                             {:fx/type :hyperlink
+                              :text "Full list of constructs"
+                              :on-action (fn [_] (browse/browse-url "https://docs.oracle.com/en/java/javase/15/docs/api/java.base/java/util/regex/Pattern.html"))}
+                             {:fx/type :separator}
+                             {:fx/type :h-box
+                              :alignment :center-right
+                              :spacing 6
+                              :children [{:fx/type :button
+                                          :text "Find in tree"
+                                          :disable (empty? (-> state :selection :source-data))
+                                          :on-action {:event/type ::print-tree}}
+                                         {:fx/type :button
+                                          :text "Print paths"
+                                          :disable (empty? (-> state :selection :source-data))
+                                          :on-action {:event/type ::print-paths}}]}]}}
+   :showing (-> state :paths-view :showing)
+   :title "Paths"})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - root --------------------------------------------------------------------------------------- {{{ -
@@ -315,12 +421,13 @@
   [state]
   {:fx/type fx/ext-many
    :desc (cond-> [{:fx/type :stage
-                   :on-close-request {:event/type ::close-window}
+                   :on-close-request {:event/type ::close-app}
                    :scene (root-scene state)
                    :showing true
                    :title "SCRepl"
                    :height (-> state :window :height)
-                   :width (-> state :window :width)}]
+                   :width (-> state :window :width)}
+                  (paths-view state)]
            (:dialog state) (conj (dialog-view state)))})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -413,10 +520,13 @@
           (throw (ex-info (str "An error in print-paths that shouldn't have happened. `output`=" output) {}))))) 
     ; run `core/find-paths
     (async/go
-      (message :progress-indet)                                     ; open dialog
-      (swap! *state assoc :output {:text "", :tooltip ""})          ; wipe `output-view`
-      (core/find-paths tree #"a" cancel-ch output-ch)      ; actually run the thing
-      (async/close! output-ch))))                                   ; clean up
+      (message :progress-indet)                                 ; open dialog
+      (swap! *state assoc :output {:text "", :tooltip ""})      ; wipe `output-view`
+      (core/find-paths tree                                     ; actually run the thing
+                       (re-pattern (-> @*state :paths-view :pattern))
+                       cancel-ch
+                       output-ch)
+      (async/close! output-ch))))                               ; clean up
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-tree --------------------------------------------------------------------------------- {{{ -
@@ -467,6 +577,7 @@
       (async/close! output-ch))))                                   ; clean up
 
 ; ---------------------------------------------------------------------------------------------- }}} -
+
 ; - event-handler ------------------------------------------------------------------------------ {{{ -
 
 ;; <a id="gui/event-handler"></a>
@@ -483,14 +594,20 @@
       ::print-tree (print-tree nil)
       ::reload-project (load-project event (-> @*state :project :filename))
 
+      ; paths-view
+      ::change-paths-pattern (swap! *state assoc-in [:paths-view :pattern] (:fx/event event))
+      ::close-paths-view (swap! *state assoc-in [:paths-view :showing] false)
+      ::close-paths-view-maybe (when (= "Esc" (-> event :fx/event .getCode .getName))
+                                 (swap! *state assoc-in [:paths-view :showing] false))
+      ::toggle-paths-view (swap! *state update-in [:paths-view :showing] not)
+
       ; selections
       ::select-source-datum (swap! *state assoc-in [:selection :source-data] (:fx/event event))
-      ::select-target-datum (swap! *state assoc-in [:selection :target-data] (:fx/event event))
 
       ; other
       ::cancel-operation (async/>!! cancel-ch :cancel)
-      ::close-dialog (swap! *state assoc :dialog nil)
-      ::close-window (stop-gui nil))
+      ::close-app (stop-gui nil)
+      ::close-dialog (swap! *state assoc :dialog nil))
     (catch Exception e (message :error e))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -

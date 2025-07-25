@@ -474,7 +474,7 @@
   (let [tree'    ((:tree-fn tree))
         root     (first tree')
         fname    (second tree')
-        children (drop 2 tree')
+        children (children tree')
         counter  (atom {:nodes 0, :leaves 0})]
     (letfn [(print-node [[value fname & children] prefix last?]
               ; check for cancellation
