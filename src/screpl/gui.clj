@@ -42,7 +42,7 @@
                   :tooltip "No results yet."}
          ; paths
          :paths-view {:pattern ""
-                      :showing true}
+                      :showing false}
          ; project
          :project {:filename nil
                    :sound-changes []
@@ -314,7 +314,7 @@
   [state]
   {:fx/type :web-view
    :url (str "data:text/html;charset=utf-8,"
-             "<html><body style='font-family:monospace;font-size:15px' "
+             "<html><body style='font-family:monospace;font-size:14px' "
              "title='" (-> state :output :tooltip) "'>"
              (-> state :output :text)
              "</body></html>")})
@@ -343,7 +343,9 @@
                               :spacing 6
                               :children [{:fx/type :v-box
                                           :children [{:fx/type :label
-                                                      :text "\\u000"}
+                                                      :text "."}
+                                                     {:fx/type :label
+                                                      :text "\\u0000"}
                                                      {:fx/type :label
                                                       :text "[abc]"}
                                                      {:fx/type :label
@@ -362,13 +364,15 @@
                                                       :text "X$"}]}
                                          {:fx/type :v-box
                                           :children [{:fx/type :label
+                                                      :text "any character"}
+                                                     {:fx/type :label
                                                       :text "Unicode character"}
                                                      {:fx/type :label
                                                       :text "a, b, or c"}
                                                      {:fx/type :label
                                                       :text "not a, b, or c"}
                                                      {:fx/type :label
-                                                      :text "a through z or A through Z"}
+                                                      :text "a through z, or A through Z"}
                                                      {:fx/type :label
                                                       :text "ab, or cd"}
                                                      {:fx/type :label

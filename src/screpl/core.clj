@@ -14,6 +14,7 @@
   (:gen-class)
   (:require [clojure.core.async :as async]
             [clojure.set :as set]
+            [clojure.string :as string]
             [fast-edn.core :as edn]
             [malli.core :as m]
             [malli.error :as me]
@@ -365,7 +366,7 @@
 (defn children
   "Extracts children from a node of a `screpl.core/Tree`."
   [x]
-  (drop 2 x))
+  (drop 3 x))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - node? -------------------------------------------------------------------------------------- {{{ -
@@ -375,7 +376,7 @@
 (defn node?
   "Checks if `x` is a node in a `screpl.core/Tree`."
   [x]
-  (< 1 (count x)))
+  (> (count x) 2))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
@@ -413,7 +414,7 @@
             (if (some? (async/poll! cancel-ch))
               (do (async/>!! output-ch {:status :cancelled}) []) ; the next iteration wants a list
               ; if not cancelled
-              (let [value (-> elem first :display)]
+              (let [value (-> elem second :display)]
                 (lazy-seq
                   (if (node? elem)
                     ; node
@@ -436,7 +437,7 @@
 ; For more on why the tree is stored as a function rather than a simple lazy sequence, see https://app.slack.com/client/T03RZGPFR/C053AK3F9, and https://claude.ai/chat/5e800009-c430-4656-90d8-82ed6ad7f205.
 
 (defn ^:export grow-tree
-  "Pipelines a value through a series of functions while keeping the intermediate results, in effect growing a tree. Functions that do not change the previous value are skipped. Returns a record of type `screpl.core.Tree` containing: under `:tree-fn` a function that builds a lazy sequence, and under `:size` counts as returned by `count-tree`. Nodes have the format `[node-value next-fn-name [child1] [child2] …]`, leaves `[leaf-value]`."
+  "Pipelines a value through a series of functions while keeping the intermediate results, in effect growing a tree. Functions that do not change the previous value are skipped. Returns a record of type `screpl.core.Tree` containing: under `:tree-fn` a function that builds a lazy sequence, and under `:size` counts as returned by `count-tree`. Nodes have the format `[id node-value next-fn-name [child1] [child2] …]`, leaves `[id leaf-value]`."
 
   ;; The tree can, and quite easily at that, grow larger than the available memory. Constructing it as a lazy sequence can prevent this but the condition is that the sequence can never be realized in full. `tree-seq`, `reduce`, etc. can do that because they do not keep the reference to the head of the sequence during their operation. However, when a lazy sequence is assigned to a global variable, that variable keeps the reference to the head, so even when only lazy-friendly functions are used, the program still ends up realizing the entire tree – and crashing with an `OutOfMemoryError`. One solution is to keep the tree as a function, and only asssign it to a local variable inside a processing function such as [count-tree](#core/count-tree), as this is a situation that the garbage collector can deal with.
 
@@ -446,19 +447,21 @@
 
   [functions     ; the pipeline
    value]        ; the value to be pipelined
-  (letfn [(grow-tree-fn [fns x]
-            (if-let [f (first fns)]
-              ; if node (more functions in the pipeline)
-              (let [x' (f x)]
-                (if (= [x] x')        ; see if applying f makes a difference
-                  (grow-tree-fn (next fns) x)     ; skip it if it doesn't
-                  (concat [x (-> f meta :name)]
-                          (map (partial grow-tree-fn (next fns)) x'))))
-              ; if leaf
-              [x]))]
-    (let [tree     (fn [] (grow-tree-fn functions value))
-          fn-count (count functions)]
-      (->Tree tree fn-count))))
+  (let [id-counter (atom -1)]
+    (letfn [(grow-tree-fn [fns x]
+              (swap! id-counter inc)
+              (if-let [f (first fns)]
+                ; if node (more functions in the pipeline)
+                (let [x' (f x)]
+                  (if (= [x] x')        ; see if applying f makes a difference
+                    (grow-tree-fn (next fns) x)     ; skip it if it doesn't
+                    (concat [@id-counter x (-> f meta :name)]
+                            (map (partial grow-tree-fn (next fns)) x'))))
+                ; if leaf
+                [@id-counter x]))]
+      (let [tree     (fn [] (grow-tree-fn functions value))
+            fn-count (count functions)]
+        (->Tree tree fn-count)))))
       
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -472,11 +475,12 @@
    cancel-ch      ; listen for cancellation here
    output-ch]     ; put output on this channel
   (let [tree'    ((:tree-fn tree))
-        root     (first tree')
-        fname    (second tree')
+        id       (nth tree' 0)
+        root     (nth tree' 1)
+        fname    (nth tree' 2)
         children (children tree')
         counter  (atom {:nodes 0, :leaves 0})]
-    (letfn [(print-node [[value fname & children] prefix last?]
+    (letfn [(print-node [[_ value fname & children] prefix last?]
               ; check for cancellation
               (if (some? (async/poll! cancel-ch))
                 (async/>!! output-ch {:status :cancelled})
@@ -506,7 +510,7 @@
                   (when last-child
                     (print-node last-child prefix' true)))))]
       (when (seq tree')
-        ; print the root withouth any connector
+        ; print the root without any connector
         (async/>!! output-ch
                    {:status :in-progress
                     :output (str (:display root)
