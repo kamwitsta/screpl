@@ -558,7 +558,7 @@
   [_]
   (let [fns       (->> @*state :project :sound-changes (filter :active?) (map :item))
         val       (-> @*state :selection :source-data)
-        tree      (core/grow-tree fns val)
+        tree      (core/grow-tree (flatten (repeat 16 fns)) val)
         counter   (atom 0)
         output-ch (async/chan 12)]
     ; handle the output from core/print-tree
@@ -567,28 +567,28 @@
         (case (:status output)
           :cancelled   (do
                          (swap! *state assoc :dialog nil)    ; close the dialog
-                         (swap! *state assoc :output
-                                {:text "<span style='color:white;background-color:crimson;'>Cancelled.</span>"
-                                 :tooltip "Tree printing cancelled."}))
+                         (swap! *state update-in [:output: :text] str "<span style='color:white;background-color:crimson;'>Cancelled.</span>")
+                         (swap! *state assoc-in [:output :tooltip] "Tree printing cancelled."))
           :completed   (do
-                         (swap! *state assoc :dialog nil)     ; close the dialog
-                         (swap! *state assoc-in [:output :text]
-                                (-> output :result))
+                         (swap! *state assoc :dialog nil)    ; close the dialog
                          (swap! *state assoc-in [:output :tooltip]
                                 (->> output :counts (format-tree-tooltip val fns))))
-          :in-progress (do
-                         (swap! counter inc)
-                         (when (zero? (mod @counter 1))
-                           (swap! *state assoc-in [:dialog :message]
-                                  (str "Processed " (format "%,d" @counter) " nodes…")))
-                         (recur))
+          :in-progress (case (:type output)
+                         :node-compl (do
+                                       (swap! counter inc)
+                                       (when (zero? (mod @counter progress-step))
+                                         (swap! *state assoc-in [:dialog :message]
+                                                (str "Processed " (format "%,d" @counter) " nodes…")))
+                                       (recur))
+                         :text       (do
+                                       (swap! *state update-in [:output :text] str (:output output))
+                                       (recur)))
           (throw (ex-info (str "An error in print-tree that shouldn't have happened. `output`=" output) {}))))) 
     ; run core/print-tree
     (async/go
-      (message :progress-indet)                                     ; open dialog
-      (core/print-tree tree #{} cancel-ch output-ch)
-      (async/close! output-ch))))
-      
+      (message :progress-indet)                         ; open dialog
+      (core/print-tree tree #{} cancel-ch output-ch)    ; run core/print-tree
+      (async/close! output-ch))))                       ; clean up
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 

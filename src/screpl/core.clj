@@ -16,7 +16,6 @@
             [clojure.set :as set]
             [clojure.string :as string]
             [fast-edn.core :as edn]
-            [hiccup2.core :as hiccup]
             [malli.core :as m]
             [malli.error :as me]
             [malli.generator :as mg]
@@ -377,105 +376,61 @@
 
 ;; <a id="core/print-tree"></a>
 
-(defn print-tree-old
-  "Prints a tree to a channel. Returns the counts of leaves and nodes."
-  [tree       ; print this tree
-   path       ; while highlighting the path to the points in this set
-   cancel-ch  ; listening for cancellation on this channel
-   output-ch] ; and outputting to this channel
-  (let [counter (atom {:nodes 0, :leaves 0})]
-    (letfn [(print-node [node class]
-              (if (some? (async/poll! cancel-ch))
-                (async/>!! output-ch {:status :cancelled})
-                (do
-                  ; print the node (1/2)
-                  (async/>!! output-ch
-                             {:status :in-progress
-                              :output (cond-> "<li"
-                                        class         (str " class=\"" class "\"")
-                                        true          (str ">"(:label node))
-                                        (:fname node) (str " <span class=\"fname\">" (:fname node) "</span>"))})
-                  ; go through the children
-                  (if (seq (:children node))
-                    ; node
-                    (do
-                      (swap! counter update :nodes inc)
-                      (async/>!! output-ch
-                                 {:status :in-progress
-                                  :output "<ul>"})
-                      (loop [children (:children node)]
-                        (print-node (first children)
-                                    (cond-> nil
-                                      (path (-> children first :id)) (str "on-path")
-                                      (some path (->> children rest (map :id))) (str " path-passes")))
-                        (when (seq (rest children))
-                          (recur (rest children))))
-                      (async/>!! output-ch
-                                 {:status :in-progress
-                                  :output "</ul>"}))
-                    ; leaf
-                    (swap! counter update :leaves inc))
-                  ; print the node (2/2)
-                  (async/>!! output-ch
-                             {:status :in-progress
-                              :output "</li>"}))))]
-      (async/>!! output-ch
-                 {:status :in-progress
-                  :output "<ul class=\"tree\">"})
-      (print-node tree (when (path (:id tree)) "on-path"))
-      (async/>!! output-ch
-                 {:status :in-progress
-                  :output "</ul>"})
-      (async/>!! output-ch
-                 {:status :completed})
-      @counter)))
-
 (defn print-tree
-  "Prints a tree while counting the nodes and leaves, and reporting progress."
+  "Converts a tree to HTML, putting partial results on a channel. Returns the count of leaves and nodes."
   [tree       ; print this tree
    path       ; while highlighting the path to the points in this set
    cancel-ch  ; listening for cancellation on this channel
    output-ch] ; and outputting to this channel
   (let [counts (atom {:nodes 0, :leaves 0})]
-    (letfn [(print-node [node class]
-              ; check for cancellation
+    (letfn [(output-progress [text]
+              (async/>!! output-ch
+                         {:status :in-progress
+                          :type :text
+                          :output text}))
+
+            (print-node [node class]
               (if (some? (async/poll! cancel-ch))
                 (async/>!! output-ch {:status :cancelled})
                 (do
-                  ; report progress
-                  (async/>!! output-ch {:status :in-progress})
-                  ; count the node/leaf
+                  ; print the node (1/2)
+                  (output-progress (cond-> "<li"
+                                     class         (str " class=\"" class "\"")
+                                     true          (str ">"(:label node))
+                                     (:fname node) (str " <span class=\"fname\">" (:fname node) "</span>")))
+                  ; go through the children
                   (if (seq (:children node))
-                    (swap! counts update :nodes inc)
+                    ; if node
+                    (do
+                      (swap! counts update :nodes inc)
+                      (output-progress "<ul>")
+                      (loop [children (:children node)]
+                        (let [curr-child           (first children)
+                              curr-child-on-path   (-> curr-child :id path)
+                              other-childr         (rest children)
+                              other-childr-on-path (->> other-childr (map :id) (some path))
+                              curr-class           (cond-> nil
+                                                     curr-child-on-path (str "on-path")
+                                                     other-childr-on-path (str " path-passes"))
+                              curr-node            (print-node curr-child curr-class)])
+                        (when (seq (rest children))
+                          (recur (rest children))))
+                      (output-progress "</ul>"))
+                    ; if leaf
                     (swap! counts update :leaves inc))
-                  ; generate the node
-                  [:li
-                   (when class {:class class})
-                   (:label node)
-                   (when (:fname node) [:span {:class "fname"} " " (:fname node)])
-                   ; loop through the children
-                   ; `loop` does side effects but it won't collect the results, hence `acc`
-                   ; must have `loop` because classes depend on successive siblings
-                   (loop [children (:children node)
-                          acc      []]
-                     (if (seq children)
-                       (let [curr-child           (first children)
-                             curr-child-on-path   (->> curr-child :id path)
-                             other-childr         (rest children)
-                             other-childr-on-path (->> other-childr (map :id) (some path))
-                             curr-class           (cond-> nil
-                                                    curr-child-on-path   (str "on-path")
-                                                    other-childr-on-path (str " path-passes"))
-                             curr-node            (print-node curr-child curr-class)]
-                         (recur other-childr (conj acc curr-node)))
-                       ; return the result of the loop as [:ul [:li 1] [:li 2]]
-                       (into [:ul] acc)))])))]
-      (let [root-class (when (path (:id tree)) "on-path")
-            result     [:ul {:class "tree"} (print-node tree root-class)]]
-        (async/>!! output-ch
-                   {:status :completed
-                    :result (-> result hiccup/html str)
-                    :counts @counts})))))
+                  ; print the node (2/2)
+                  (output-progress "</li>")
+                  ; report progress
+                  (async/>!! output-ch
+                             {:status :in-progress
+                              :type :node-compl}))))]
+
+      (output-progress "<ul class=\"tree\">")
+      (print-node tree (when (path (:id tree)) "on-path"))
+      (output-progress "</ul>")
+      (async/>!! output-ch
+                 {:status :completed
+                  :counts @counts}))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 

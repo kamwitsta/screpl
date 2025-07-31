@@ -13,8 +13,7 @@
                  ; gui
                  [cljfx "1.9.5"]
                  [org.clojure/core.async "1.8.741"]
-                 [com.github.mifmif/generex "1.0.2"]
-                 [hiccup "2.0.0"]]
+                 [com.github.mifmif/generex "1.0.2"]]
   :main ^:skip-aot screpl.main
   :target-path "target/%s"
   :profiles {:dev {:dependencies [[nrepl "1.3.1"]
