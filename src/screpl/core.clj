@@ -377,6 +377,59 @@
 
 ;; <a id="core/print-tree"></a>
 
+(defn print-tree-old
+  "Prints a tree to a channel. Returns the counts of leaves and nodes."
+  [tree       ; print this tree
+   path       ; while highlighting the path to the points in this set
+   cancel-ch  ; listening for cancellation on this channel
+   output-ch] ; and outputting to this channel
+  (let [counter (atom {:nodes 0, :leaves 0})]
+    (letfn [(print-node [node class]
+              (if (some? (async/poll! cancel-ch))
+                (async/>!! output-ch {:status :cancelled})
+                (do
+                  ; print the node (1/2)
+                  (async/>!! output-ch
+                             {:status :in-progress
+                              :output (cond-> "<li"
+                                        class         (str " class=\"" class "\"")
+                                        true          (str ">"(:label node))
+                                        (:fname node) (str " <span class=\"fname\">" (:fname node) "</span>"))})
+                  ; go through the children
+                  (if (seq (:children node))
+                    ; node
+                    (do
+                      (swap! counter update :nodes inc)
+                      (async/>!! output-ch
+                                 {:status :in-progress
+                                  :output "<ul>"})
+                      (loop [children (:children node)]
+                        (print-node (first children)
+                                    (cond-> nil
+                                      (path (-> children first :id)) (str "on-path")
+                                      (some path (->> children rest (map :id))) (str " path-passes")))
+                        (when (seq (rest children))
+                          (recur (rest children))))
+                      (async/>!! output-ch
+                                 {:status :in-progress
+                                  :output "</ul>"}))
+                    ; leaf
+                    (swap! counter update :leaves inc))
+                  ; print the node (2/2)
+                  (async/>!! output-ch
+                             {:status :in-progress
+                              :output "</li>"}))))]
+      (async/>!! output-ch
+                 {:status :in-progress
+                  :output "<ul class=\"tree\">"})
+      (print-node tree (when (path (:id tree)) "on-path"))
+      (async/>!! output-ch
+                 {:status :in-progress
+                  :output "</ul>"})
+      (async/>!! output-ch
+                 {:status :completed})
+      @counter)))
+
 (defn print-tree
   "Prints a tree while counting the nodes and leaves, and reporting progress."
   [tree       ; print this tree
