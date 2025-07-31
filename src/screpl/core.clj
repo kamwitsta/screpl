@@ -16,6 +16,7 @@
             [clojure.set :as set]
             [clojure.string :as string]
             [fast-edn.core :as edn]
+            [hiccup2.core :as hiccup]
             [malli.core :as m]
             [malli.error :as me]
             [malli.generator :as mg]
@@ -337,131 +338,38 @@
 ; = tree operations ============================================================================ {{{ =
 
 ;; <a id="core/tree"></a>
-;; ## Extract information from core/Tree’s
+;; ## Build and print trees
 
-;; - [Tree](#core/tree)
-;; - [children](#core/children)
-;; - [node?](#core/node?)
-;; - [count-tree](#core/count-tree)
-;; - [find-paths](#core/find-paths)
 ;; - [grow-tree](#core/grow-tree)
 ;; - [print-tree](#core/print-tree)
 
-; - tree --------------------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/tree"></a>
-
-;; Tree as produced by `grow-tree`.
-(defrecord ^:export Tree [tree-fn fn-count])
-;; - `tree-fn` is a tree-building function; see the comment under [grow-tree](#core/grow-tree);
-;; - `fn-count` is the number of functions used in the building of the tree; a substite for the number of nodes, as those can take very long to count
-
-;; An explicit type is needed in order to define a custom print-method in [screpl.cli](#screpl.cli).
-
-; ---------------------------------------------------------------------------------------------- }}} -
-; - children ----------------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/children"></a>
-
-(defn children
-  "Extracts children from a node of a `screpl.core/Tree`."
-  [x]
-  (drop 3 x))
-
-; ---------------------------------------------------------------------------------------------- }}} -
-; - node? -------------------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/node?"></a>
-
-(defn node?
-  "Checks if `x` is a node in a `screpl.core/Tree`."
-  [x]
-  (> (count x) 2))
-
-; ---------------------------------------------------------------------------------------------- }}} -
-
-; - count-tree --------------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/count-tree"></a>
-
-(defn ^:export count-tree
-  "Counts nodes and leaves in a `screpl.core/Tree`; see the comments there."
-  [^Tree tree    ; count this tree
-   progressbar]  ; display progress through this fn
-  (let [progress! (progressbar "leaves" 10000)
-        tree'     ((:tree-fn tree))]
-    (reduce (fn [acc x]
-              (if (node? x)
-                (update acc :nodes inc)
-                (do
-                  (progress!)
-                  (update acc :leaves inc))))
-            {:nodes 0, :leaves 0}
-            (tree-seq node? children tree'))))
-
-; ---------------------------------------------------------------------------------------------- }}} -
-; - find-paths --------------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/find-paths"></a>
-
-(defn ^:export find-paths
-  "Finds paths, in a `screpl.core/Tree`, from the root to leaves matching a regular expression."
-  [^Tree tree    ; find in this tree
-   re            ; paths to leaves that match this regexp
-   cancel-ch     ; listen for cancellation here
-   output-ch]    ; display progress through this ch
-  (letfn [(find-paths-hlp [elem path]
-            (if (some? (async/poll! cancel-ch))
-              (do (async/>!! output-ch {:status :cancelled}) []) ; the next iteration wants a list
-              ; if not cancelled
-              (let [value (-> elem second :display)]
-                (lazy-seq
-                  (if (node? elem)
-                    ; node
-                    (mapcat #(find-paths-hlp % (conj path value))
-                           (children elem))
-                    ; leaf
-                    (when (re-find re value)
-                      (let [found-path (conj path value)]
-                        (async/>!! output-ch {:status :in-progress
-                                              :output found-path})
-                        [found-path])))))))]
-    (dorun (find-paths-hlp ((:tree-fn tree)) []))
-    (async/>!! output-ch {:status :completed})))
-
-; ---------------------------------------------------------------------------------------------- }}} -
 ; - grow-tree ---------------------------------------------------------------------------------- {{{ -
 
 ;; <a id="core/grow-tree"></a>
 
-; For more on why the tree is stored as a function rather than a simple lazy sequence, see https://app.slack.com/client/T03RZGPFR/C053AK3F9, and https://claude.ai/chat/5e800009-c430-4656-90d8-82ed6ad7f205.
-
 (defn ^:export grow-tree
-  "Pipelines a value through a series of functions while keeping the intermediate results, in effect growing a tree. Functions that do not change the previous value are skipped. Returns a record of type `screpl.core.Tree` containing: under `:tree-fn` a function that builds a lazy sequence, and under `:size` counts as returned by `count-tree`. Nodes have the format `[id node-value next-fn-name [child1] [child2] …]`, leaves `[id leaf-value]`."
-
-  ;; The tree can, and quite easily at that, grow larger than the available memory. Constructing it as a lazy sequence can prevent this but the condition is that the sequence can never be realized in full. `tree-seq`, `reduce`, etc. can do that because they do not keep the reference to the head of the sequence during their operation. However, when a lazy sequence is assigned to a global variable, that variable keeps the reference to the head, so even when only lazy-friendly functions are used, the program still ends up realizing the entire tree – and crashing with an `OutOfMemoryError`. One solution is to keep the tree as a function, and only asssign it to a local variable inside a processing function such as [count-tree](#core/count-tree), as this is a situation that the garbage collector can deal with.
-
-  ;; This means that the tree is generated anew every time it has its nodes counted, leaves picked, etc. There is no harm to the performance, however, because the tree can never be realized in full at any one time anyway since it does not fit in the memory.
-
-  ;; After due deliberation, I decided that the user of SCRepl does not need to know all of that. The whole function-not-sequence-shenanigan is going to handled internally, and to the user a simpler interface will be presented allowing them to say `(def a grow-tree fns val) (count-tree a)` instead of `(def a #(grow-tree fns val) (count-tree (a))`.
-
+  "Pipelines a value through a series of functions while keeping the intermediate results, in effect growing a tree. Functions that do not change the previous value are skipped. Returns a hash-map with the keys `:id`, `:label`, `:value`, `:fname` and `:children` where `:value` is the given node, `:fname` is the name of the function that produces `:children` from it, and `:label` is a convenience copy of `-> :value :display`. Note that besides `:id` there might also be a second, unrelated `:id` inside `:value`."
   [functions     ; the pipeline
    value]        ; the value to be pipelined
   (let [id-counter (atom -1)]
-    (letfn [(grow-tree-fn [fns x]
-              (swap! id-counter inc)
-              (if-let [f (first fns)]
-                ; if node (more functions in the pipeline)
-                (let [x' (f x)]
-                  (if (= [x] x')        ; see if applying f makes a difference
-                    (grow-tree-fn (next fns) x)     ; skip it if it doesn't
-                    (concat [@id-counter x (-> f meta :name)]
-                            (map (partial grow-tree-fn (next fns)) x'))))
-                ; if leaf
-                [@id-counter x]))]
-      (let [tree     (fn [] (grow-tree-fn functions value))
-            fn-count (count functions)]
-        (->Tree tree fn-count)))))
+   (letfn [(grow-tree-hlp [fns x]
+             (swap! id-counter inc)
+             (if-let [f (first fns)]
+               ; node
+               (let [x' (f x)]
+                 (if (= [x] x')                     ; see if applying f makes a difference
+                   (grow-tree-hlp (next fns) x)     ; skip it if it doesn't
+                   (hash-map :id @id-counter
+                            :label (:display x)
+                            :value x
+                            :fname (-> f meta :name)
+                            :children (map (partial grow-tree-hlp (next fns)) x'))))
+               ; leaf
+               {:id @id-counter
+                :label (:display x)
+                :value x
+                :children []}))]
+     (grow-tree-hlp functions value))))
       
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -469,67 +377,52 @@
 
 ;; <a id="core/print-tree"></a>
 
-(defn ^:export print-tree
-  "Pretty prints a `screpl.core/Tree`. Returns a map with the number of nodes and leaves."
-  [^Tree tree     ; print this tree
-   cancel-ch      ; listen for cancellation here
-   output-ch]     ; put output on this channel
-  (let [tree'    ((:tree-fn tree))
-        id       (nth tree' 0)
-        root     (nth tree' 1)
-        fname    (nth tree' 2)
-        children (children tree')
-        counter  (atom {:nodes 0, :leaves 0})]
-    (letfn [(print-node [[_ value fname & children] prefix last?]
+(defn print-tree
+  "Prints a tree while counting the nodes and leaves, and reporting progress."
+  [tree       ; print this tree
+   path       ; while highlighting the path to the points in this set
+   cancel-ch  ; listening for cancellation on this channel
+   output-ch] ; and outputting to this channel
+  (let [counts (atom {:nodes 0, :leaves 0})]
+    (letfn [(print-node [node class]
               ; check for cancellation
               (if (some? (async/poll! cancel-ch))
                 (async/>!! output-ch {:status :cancelled})
-                (let [connector     (if last? "└─ " "├─ ")
-                      prefix'       (str prefix (if last? "&nbsp;&nbsp;&nbsp;" "│&nbsp;&nbsp;"))   ; accumulates the indent level
-                      head-children (butlast children)
-                      last-child    (last children)]      ; special case: different connector and prefix
-                  ; print the current node/leaf
-                  (async/>!! output-ch
-                             {:status :in-progress
-                              :output (str "<span style='color:lightsteelblue;'>"
-                                           prefix
-                                           connector
-                                           "</span>"
-                                           (:display value)
-                                           " "
-                                           "<span style='color:olive;'>" fname "</span>"
-                                           "</br>")})
-                  ; update counter
-                  (if (empty? children)
-                    (swap! counter update :leaves inc)
-                    (swap! counter update :nodes inc))
-                  ; repeat for all but last children
-                  (doseq [child head-children]
-                    (print-node child prefix' false))
-                  ; repeat for the last child (needs a different connector)
-                  (when last-child
-                    (print-node last-child prefix' true)))))]
-      (when (seq tree')
-        ; print the root without any connector
+                (do
+                  ; report progress
+                  (async/>!! output-ch {:status :in-progress})
+                  ; count the node/leaf
+                  (if (seq (:children node))
+                    (swap! counts update :nodes inc)
+                    (swap! counts update :leaves inc))
+                  ; generate the node
+                  [:li
+                   (when class {:class class})
+                   (:label node)
+                   (when (:fname node) [:span {:class "fname"} " " (:fname node)])
+                   ; loop through the children
+                   ; `loop` does side effects but it won't collect the results, hence `acc`
+                   ; must have `loop` because classes depend on successive siblings
+                   (loop [children (:children node)
+                          acc      []]
+                     (if (seq children)
+                       (let [curr-child           (first children)
+                             curr-child-on-path   (->> curr-child :id path)
+                             other-childr         (rest children)
+                             other-childr-on-path (->> other-childr (map :id) (some path))
+                             curr-class           (cond-> nil
+                                                    curr-child-on-path   (str "on-path")
+                                                    other-childr-on-path (str " path-passes"))
+                             curr-node            (print-node curr-child curr-class)]
+                         (recur other-childr (conj acc curr-node)))
+                       ; return the result of the loop as [:ul [:li 1] [:li 2]]
+                       (into [:ul] acc)))])))]
+      (let [root-class (when (path (:id tree)) "on-path")
+            result     [:ul {:class "tree"} (print-node tree root-class)]]
         (async/>!! output-ch
-                   {:status :in-progress
-                    :output (str (:display root)
-                                 " " 
-                                 "<span style='color:olive;'>" fname "</span>"
-                                 "</br>")})
-        ; update counter
-        (if (empty? children)
-          (swap! counter update :leaves inc)
-          (swap! counter update :nodes inc))
-        ; print the immediate children except the last
-        (doseq [child (butlast children)]
-          (print-node child "" false))
-        ; the last child has a different connector
-        (print-node (last children) "" true)
-        ; report completion
-        (async/>!! output-ch {:status :completed})
-        ; return counter
-        counter))))
+                   {:status :completed
+                    :result (-> result hiccup/html str)
+                    :counts @counts})))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
@@ -627,3 +520,5 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================== }}} =
+
+(defn ^:export find-paths [] 1)

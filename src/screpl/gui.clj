@@ -10,6 +10,7 @@
   (:require [cljfx.api :as fx]
             [clojure.core.async :as async]
             [clojure.java.browse :as browse]
+            [clojure.java.io :as io]
             [clojure.string :as string]
             [screpl.core :as core])
   (:import [javafx.stage FileChooser FileChooser$ExtensionFilter]
@@ -310,14 +311,18 @@
 ;; <a id="gui/output-view"></a>
 
 (defn- output-view
-  "A field display the results."
+  "A field displaying the results."
   [state]
-  {:fx/type :web-view
-   :url (str "data:text/html;charset=utf-8,"
-             "<html><body style='font-family:monospace;font-size:14px' "
-             "title='" (-> state :output :tooltip) "'>"
-             (-> state :output :text)
-             "</body></html>")})
+  (let [style (slurp (io/resource "output-view.css"))]
+    {:fx/type :web-view
+     :context-menu-enabled false
+     :url (str "data:text/html;charset=utf-8,"
+               "<html><head><style>"
+               style
+               "</style></head>"
+               "<body title='" (-> state :output :tooltip) "'>"
+               (-> state :output :text)
+               "</body></html>")}))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - paths -------------------------------------------------------------------------------------- {{{ -
@@ -471,7 +476,7 @@
   ; get the filename, from the event handler, or from a dialog
   (let [
         ; fname   (or filename (chooser-dialog event))
-        fname   "/home/kamil/screpl/doc/sample-project.clj"
+        fname   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
         project (core/load-project fname)]
     (swap! *state assoc-in [:project :filename] fname)
     ; change the width of the window to accomodate target data
@@ -517,7 +522,7 @@
                          (swap! *state update-in [:output :text] str
                                 (string/join " > " (:output output)) "<br>")
                          (swap! counter inc)
-                         (when (= 0 (mod @counter progress-step))
+                         (when (zero? (mod @counter progress-step))
                            (swap! *state assoc-in [:dialog :message]
                                   (str "Checked " (format "%,d" @counter) " leaves…")))
                          (recur))
@@ -537,13 +542,14 @@
 
 ;; <a id="gui/project-info"></a>
 
-(defn- format-tooltip
-  "Format a tooltip with basic statistics of a tree."
-  [tree
+(defn- format-tree-tooltip
+  "Format a tooltip with basic stats of a tree."
+  [value
+   functions
    counts]
   (let [linebreak "%26%2310%3B"]  ; (java.net.URLEncoder/encode "&#10;")
-    (str "A tree from \"" (-> ((:tree-fn tree)) first :display) "\" through" linebreak
-         "  " (:fn-count tree) " sound changes, with" linebreak
+    (str "A tree from \"" (:display value) "\" through" linebreak
+         "  " (count functions) " sound changes, with" linebreak
          "  " (format "%,d" (:nodes counts)) " nodes and" linebreak
          "  " (format "%,d" (:leaves counts)) " leaves.")))
 
@@ -554,31 +560,35 @@
         val       (-> @*state :selection :source-data)
         tree      (core/grow-tree fns val)
         counter   (atom 0)
-        output-ch (async/chan 12)]  ; 12 is just to make sure nothing has to wait
-    ; listen for output
+        output-ch (async/chan 12)]
+    ; handle the output from core/print-tree
     (async/go-loop []
       (when-let [output (async/<! output-ch)]
         (case (:status output)
           :cancelled   (do
-                         (swap! *state update-in [:output :text] str
-                                "<span style='color:white;background-color:crimson;'>Cancelled.</span>")
-                         (swap! *state assoc :dialog nil))
-          :completed   (swap! *state assoc :dialog nil)     ; close the dialog
+                         (swap! *state assoc :dialog nil)    ; close the dialog
+                         (swap! *state assoc :output
+                                {:text "<span style='color:white;background-color:crimson;'>Cancelled.</span>"
+                                 :tooltip "Tree printing cancelled."}))
+          :completed   (do
+                         (swap! *state assoc :dialog nil)     ; close the dialog
+                         (swap! *state assoc-in [:output :text]
+                                (-> output :result))
+                         (swap! *state assoc-in [:output :tooltip]
+                                (->> output :counts (format-tree-tooltip val fns))))
           :in-progress (do
-                         (swap! *state update-in [:output :text] str (:output output))
                          (swap! counter inc)
-                         (when (= 0 (mod @counter progress-step))
+                         (when (zero? (mod @counter 1))
                            (swap! *state assoc-in [:dialog :message]
-                                  (str "Printed " (format "%,d" @counter) " lines…")))
+                                  (str "Processed " (format "%,d" @counter) " nodes…")))
                          (recur))
           (throw (ex-info (str "An error in print-tree that shouldn't have happened. `output`=" output) {}))))) 
-    ; run `core/print-tree`
+    ; run core/print-tree
     (async/go
       (message :progress-indet)                                     ; open dialog
-      (swap! *state assoc :output {:text "", :tooltip ""})          ; wipe `output-view`
-      (let [counts (core/print-tree tree cancel-ch output-ch)]      ; actually run the thing
-        (swap! *state assoc-in [:output :tooltip] (format-tooltip tree @counts)))   ; tooltip
-      (async/close! output-ch))))                                   ; clean up
+      (core/print-tree tree #{} cancel-ch output-ch)
+      (async/close! output-ch))))
+      
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 

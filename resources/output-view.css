@@ -1,0 +1,119 @@
+/* adapted from: https://iamkate.com/code/tree-views/ */
+
+/*
+
+The tree is composed of four elements:
+– [1a] nodes and [1b] bullets;
+– [2] downward vertical connector;
+the left border of the rectangle that goes down from the node
+except the last child, that is transparent;
+– [3] upward vertical connector;
+the left border of the rectangle inserted before the node;
+– [4] horizontal connector;
+the bottom border of the rectangle inserted before the node;
+
+This makes sense because:
+– the downward line is only drawn in nodes, not in leaves;
+– the upwards line is drawn both in nodes and leaves;
+– in the leaves, it might be that only a middle leaf is on the path, meaning its previous siblings need to have the vertical connector highlighted, but the successive siblings don't need any highlighting at all;
+– in the nodes, if a successive sibling needs to be highlighted, then all the children must have their leftmost connector highlighted anyway.
+
+This means two highlight groups are needed:
+– on-path: highlights the upward vertical and also the horizontal connector (+ bullet);
+– path-passes: highlights both vertical connectors;
+Combination of both is also possible.
+
+*/
+
+:root {
+	--spacing: 15px;
+	--width: 2px;
+	/* :web-view breaks on hashes */
+	--color-border: %23d4c5a4;	/* regular connectors */
+	--color-display: %23000000;
+	--color-fname: %238cb5aa;
+	--color-path: %23a66482;	/* highlighted connectors */
+}
+
+.tree {
+	font-size: var(--spacing);
+	line-height: calc(var(--spacing) * 1.5);
+	position: absolute;
+	left: calc(var(--spacing) * -2);
+}
+
+.tree li span.fname {
+	color: var(--color-fname);
+}
+
+/* [1a] nodes */
+.tree li {
+	display: block;		/* no bullets */
+	position: relative;
+	padding-left: calc(var(--spacing) * 2);
+	color: var(--color-display);
+	font-weight: normal;
+}
+
+/* [1b] bullets */
+.tree li::after {
+	content: '';
+	display: block;
+	position: absolute;
+	height: calc(var(--spacing) * 0.5);
+	width: calc(var(--spacing) * 0.5);
+	left: calc(var(--spacing) - var(--width) * 1.5);
+	top: calc(var(--spacing) * 0.5 + var(--width));
+	border-radius: 50%;
+	background: var(--color-border);
+}
+
+/* spacing */
+.tree ul {
+	margin-left: calc(var(--spacing) * -1);
+	padding-left: 0;
+}
+
+/* [2] downward vertical lines */
+.tree ul li {
+	border-left: var(--width) solid var(--color-border);
+}
+.tree ul li:last-child {
+	border-color: transparent;
+}
+
+/* [3] upward vertical lines + [4] horizontal lines */
+.tree ul li::before {
+	content: '';
+	display: block;
+	position: absolute;
+	left: calc(var(--width) * -1);
+	top: calc(var(--spacing) * -0.5 + var(--width) * 0.5);
+	height: calc(var(--spacing) + var(--width) * 2);
+	width: calc(var(--spacing) + var(--width));
+	border: solid var(--color-border);
+	border-width: 0 0 var(--width) var(--width);
+}
+
+/* on-path: both vertical and horizontal connectors + bullet */
+.tree li.on-path {
+	color: var(--color-path);
+	font-weight: bold;
+}
+.tree li.on-path::after {
+	background: var(--color-path);
+}
+.tree ul li.on-path::before {
+	border-color: var(--color-path);
+}
+
+/* path-passes: only vertical connectors */
+.tree ul li.path-passes {
+	border-color: var(--color-path);
+}
+.tree ul li.path-passes:last-child {
+	border-color: transparent;
+}
+.tree ul li.path-passes::before {
+	border-left-color: var(--color-path);
+}
