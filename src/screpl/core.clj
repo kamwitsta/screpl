@@ -345,7 +345,7 @@
 
 ; - grow-tree ---------------------------------------------------------------------------------- {{{ -
 
-;; <a id="core/grow-tree"></a>
+;; <a id="cor/grow-tree"></a>
 
 (defn ^:export grow-tree
   "Pipelines a value through a series of functions while keeping the intermediate results, in effect growing a tree. Functions that do not change the previous value are skipped. Returns a lazy sequence of hash-map with the keys `:id`, `:label`, `:value`, `:fname` and `:children` where `:value` is the given node, `:fname` is the name of the function that produces `:children` from it, and `:label` is a convenience copy of `-> :value :display`. Note that besides `:id` there might also be a second, unrelated `:id` inside `:value`."
@@ -384,17 +384,20 @@
    cancel-ch       ; listening for cancellation on this channel
    output-ch]      ; and outputting to this channel (can be `nil`)
   (let [path (atom #{})]    ; only collects ids on path, for printing path in tree
-    (letfn [(search-node
+    (letfn [(report! [status & [output]]
+              (when output-ch
+                (async/>!! output-ch (cond-> {:status status}
+                                       output (assoc :output output)))))
+            
+            (search-node
               [curr-path-id
                curr-path-label
                node]
               (if (some? (async/poll! cancel-ch))
-                (async/>!! output-ch {:status :cancelled})
+                (report! :cancelled)
                 ; if not cancelled
                 (do
-                  ; report progress
-                  (when output-ch
-                    (async/>!! output-ch {:status :progress}))
+                  (report! :progress)
                   ; search children
                   (let [full-path-id    (conj curr-path-id (:id node))
                         full-path-label (conj curr-path-label (:label node))]
@@ -403,22 +406,15 @@
                       (do
                         (when (and intermediate (re-find re (:label node)))
                           (swap! path into full-path-id)
-                          (when output-ch
-                            (async/>!! output-ch
-                                       {:status :partial
-                                        :output (conj full-path-label "…")})))
+                          (report! :partial (conj full-path-label "…")))
                         (mapv (partial search-node full-path-id full-path-label) (:children node)))
                       ; leaf
                       (when (re-find re (:label node))
                         (swap! path into full-path-id)
-                        ; report find
-                        (when output-ch
-                          (async/>!! output-ch
-                                     {:status :partial
-                                      :output full-path-label}))))))))]
+                        (report! :partial full-path-label)))))))]
+
       (search-node [] [] tree)
-      (when output-ch
-        (async/>!! output-ch {:status :completed}))
+      (report! :completed)
       @path)))
       
 
@@ -434,26 +430,25 @@
    cancel-ch  ; listening for cancellation on this channel
    output-ch] ; and outputting to this channel
   (let [counts (atom {:nodes 0, :leaves 0})]
-    (letfn [(output-partial [text]
-              (async/>!! output-ch
-                         {:status :partial
-                          :output text}))
+    (letfn [(report! [status & [output]]
+              (async/>!! output-ch (cond-> {:status status}
+                                     output (assoc :output output))))
 
             (print-node [node class]
               (if (some? (async/poll! cancel-ch))
                 (async/>!! output-ch {:status :cancelled})
                 (do
                   ; print the node (1/2)
-                  (output-partial (cond-> "<li"
-                                    class         (str " class=\"" class "\"")
-                                    true          (str ">"(:label node))
-                                    (:fname node) (str " <span class=\"fname\">" (:fname node) "</span>")))
+                  (report! :partial (cond-> "<li"
+                                     class         (str " class=\"" class "\"")
+                                     true          (str ">"(:label node))
+                                     (:fname node) (str " <span class=\"fname\">" (:fname node) "</span>")))
                   ; go through the children
                   (if (seq (:children node))
                     ; if node
                     (do
                       (swap! counts update :nodes inc)
-                      (output-partial "<ul>")
+                      (report! :partial "<ul>")
                       (loop [children (:children node)]
                         (let [curr-child           (first children)
                               curr-child-on-path   (-> curr-child :id path)
@@ -465,20 +460,18 @@
                               curr-node            (print-node curr-child curr-class)])
                         (when (seq (rest children))
                           (recur (rest children))))
-                      (output-partial "</ul>"))
+                      (report! :partial "</ul>"))
                     ; if leaf
                     (swap! counts update :leaves inc))
                   ; print the node (2/2)
-                  (output-partial "</li>")
+                  (report! :partial "</li>")
                   ; report progress
-                  (async/>!! output-ch {:status :progress}))))]
+                  (report! :progress))))]
 
-      (output-partial "<ul class=\"tree\">")
+      (report! :partial "<ul class=\"tree\">")
       (print-node tree (when (path (:id tree)) "on-path"))
-      (output-partial "</ul>")
-      (async/>!! output-ch
-                 {:status :completed
-                  :counts @counts}))))
+      (report! :partial "</ul>")
+      (report! :completed @counts))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 

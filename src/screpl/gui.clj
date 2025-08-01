@@ -597,7 +597,7 @@
           :completed (do
                        (swap! *state assoc :dialog nil)    ; close the dialog
                        (swap! *state assoc-in [:output :tooltip]
-                              (->> output :counts format-tree-tooltip)))
+                              (->> output :output format-tree-tooltip)))
           :partial   (do
                        ; core/print-tree has no choice but to send lots of tiny updates
                        ; it's cheaper to do several big updates to output-view than loads of tiny ones

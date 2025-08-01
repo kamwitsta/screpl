@@ -45,17 +45,17 @@ When loading data from a database, the fields `:source-data` and `:target-data` 
     (require '[toucan2.core :as db])
 
     (defn get-data []
-      (let [db-config    {:dbtype           "mariadb"
-                          :dbname           "my_database"
-                          :host             "localhost"
-                          :port             3306
-                          :user             "username"
-                          :password         "1234"
-                          :sessionVariables "sql_mode='ANSI_QUOTES'"}
-            source-data  (->> (db/select :conn db-config "WORDS" :language "Proto-Slavic")
-                              (map #(into {} %))      ; unwrap from toucan2.instance/instance
-                              (vec))                  ; ensure vector, not list
-            target-data  (->> (db/select :conn db-config "WORDS" :language "Polish")
+      (let [db-config   {:dbtype           "mariadb"
+                         :dbname           "my_database"
+                         :host             "localhost"
+                         :port             3306
+                         :user             "username"
+                         :password         "1234"
+                         :sessionVariables "sql_mode='ANSI_QUOTES'"}
+            source-data (->> (db/select :conn db-config "WORDS" :language "Proto-Slavic")
+                             (map #(into {} %))      ; unwrap from toucan2.instance/instance
+                             (vec))                  ; ensure vector, not list
+            target-data (->> (db/select :conn db-config "WORDS" :language "Polish")
                               (map #(into {} %))
                               (vec))
         {:source-data source-data
