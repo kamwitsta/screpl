@@ -43,6 +43,7 @@
                   :tooltip "No results yet."}
          ; paths
          :paths-view {:pattern ""
+                      :intermediate true
                       :showing false}
          ; project
          :project {:filename nil
@@ -169,13 +170,13 @@
                             :text "▼"
                             :visible (< index (dec (count (->@*state :project :sound-changes))))}]}
                {:fx/type :check-box
+                :selected (:active? item)
                 :on-action (fn [_]
                              (swap! *state update-in [:project :sound-changes]
                                     (partial map (fn [i]
                                                    (cond-> i
                                                      (= (:id i) (:id item))
-                                                     (update :active? not))))))
-                :selected (:active? item)}
+                                                     (update :active? not))))))}
                {:fx/type :label
                 :disable (-> item :active? not)
                 :text (-> item :item meta :name str)
@@ -392,17 +393,28 @@
                               :text "Full list of constructs"
                               :on-action (fn [_] (browse/browse-url "https://docs.oracle.com/en/java/javase/15/docs/api/java.base/java/util/regex/Pattern.html"))}
                              {:fx/type :separator}
-                             {:fx/type :h-box
-                              :alignment :center-right
+                             {:fx/type :v-box
                               :spacing 6
-                              :children [{:fx/type :button
-                                          :text "Print in tree"
-                                          :disable (empty? (-> state :selection :source-data))
-                                          :on-action {:event/type ::print-tree-paths}}
-                                         {:fx/type :button
-                                          :text "Print paths"
-                                          :disable (empty? (-> state :selection :source-data))
-                                          :on-action {:event/type ::print-paths}}]}]}}
+                              :children [{:fx/type :h-box
+                                          :alignment :center-right
+                                          :spacing 6
+                                          :children [{:fx/type :label
+                                                      :text "Search intermediate"}
+                                                     {:fx/type :check-box
+                                                      :selected (-> state :paths-view :intermediate)
+                                                      :on-action (fn [_]
+                                                                   (swap! *state update-in [:paths-view :intermediate] not))}]}
+                                         {:fx/type :h-box
+                                          :alignment :center-right
+                                          :spacing 6
+                                          :children [{:fx/type :button
+                                                      :text "Print in tree"
+                                                      :disable (empty? (-> state :selection :source-data))
+                                                      :on-action {:event/type ::print-tree-paths}}
+                                                     {:fx/type :button
+                                                      :text "Print paths"
+                                                      :disable (empty? (-> state :selection :source-data))
+                                                      :on-action {:event/type ::print-paths}}]}]}]}}
    :showing (-> state :paths-view :showing)
    :title "Paths"})
 
@@ -547,6 +559,7 @@
       (swap! *state assoc :output {:text "", :tooltip ""})      ; wipe `output-view`
       (core/find-paths tree                                     ; actually run the thing
                        (re-pattern (-> @*state :paths-view :pattern))
+                       (-> @*state :paths-view :intermediate)
                        cancel-ch
                        output-ch)
       (async/close! output-ch))))                               ; clean up
@@ -616,6 +629,7 @@
   [_]
   (let [path (core/find-paths (grow-tree)
                               (-> @*state :paths-view :pattern re-pattern)
+                              (-> @*state :paths-view :intermediate)
                               cancel-ch
                               nil)]
     (print-tree nil path)))

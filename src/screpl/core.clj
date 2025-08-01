@@ -378,10 +378,11 @@
 
 (defn ^:export find-paths
   "Finds paths in a tree, from the root to leaves matching a regex. Outputs results to a channel, and returns a set of nodes."
-  [tree         ; search this tree
-   re           ; for leaves matching this regex
-   cancel-ch    ; listening for cancellation on this channel
-   output-ch]   ; and outputting to this channel (can be `nil`)
+  [tree            ; search this tree
+   re              ; for leaves matching this regex
+   intermediate    ; if false, search only leaves
+   cancel-ch       ; listening for cancellation on this channel
+   output-ch]      ; and outputting to this channel (can be `nil`)
   (let [path (atom #{})]    ; only collects ids on path, for printing path in tree
     (letfn [(search-node
               [curr-path-id
@@ -399,7 +400,14 @@
                         full-path-label (conj curr-path-label (:label node))]
                     (if (seq (:children node))
                       ; node
-                      (mapv (partial search-node full-path-id full-path-label) (:children node))
+                      (do
+                        (when (and intermediate (re-find re (:label node)))
+                          (swap! path into full-path-id)
+                          (when output-ch
+                            (async/>!! output-ch
+                                       {:status :partial
+                                        :output (conj full-path-label "…")})))
+                        (mapv (partial search-node full-path-id full-path-label) (:children node)))
                       ; leaf
                       (when (re-find re (:label node))
                         (swap! path into full-path-id)
