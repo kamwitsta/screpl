@@ -39,7 +39,8 @@ Combination of both is also possible.
 	font-size: var(--spacing);
 	line-height: calc(var(--spacing) * 1.5);
 	position: absolute;
-	left: calc(var(--spacing) * -2);
+	top: calc(var(--spacing) * -0.5);
+	left: calc(var(--spacing) * -2.5);
 }
 
 .tree li span.fname {

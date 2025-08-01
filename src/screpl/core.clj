@@ -382,7 +382,7 @@
    re           ; for leaves matching this regex
    cancel-ch    ; listening for cancellation on this channel
    output-ch]   ; and outputting to this channel (can be `nil`)
-  (let [path (atom #{})]
+  (let [path (atom #{})]    ; only collects ids on path, for printing path in tree
     (letfn [(search-node
               [curr-path-id
                curr-path-label
@@ -396,7 +396,7 @@
                     (async/>!! output-ch {:status :progress}))
                   ; search children
                   (let [full-path-id    (conj curr-path-id (:id node))
-                        full-path-label (conj curr-path-id (:label node))]
+                        full-path-label (conj curr-path-label (:label node))]
                     (if (seq (:children node))
                       ; node
                       (mapv (partial search-node full-path-id full-path-label) (:children node))
@@ -409,6 +409,8 @@
                                      {:status :partial
                                       :output full-path-label}))))))))]
       (search-node [] [] tree)
+      (when output-ch
+        (async/>!! output-ch {:status :completed}))
       @path)))
       
 

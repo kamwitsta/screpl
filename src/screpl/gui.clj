@@ -531,12 +531,14 @@
                               "<span style='color:white;background-color:crimson;'>Cancelled.</span>"))
           :completed (swap! *state assoc :dialog nil)     ; close the dialog
           :progress  (do
-                       (swap! *state update-in [:output :text] str
-                              (string/join " > " (:output output)) "<br>")
                        (swap! counter inc)
                        (when (zero? (mod @counter progress-step))
                          (swap! *state assoc-in [:dialog :message]
                                 (str "Checked " (format "%,d" @counter) " leaves…")))
+                       (recur))
+          :partial   (do
+                       (swap! *state update-in [:output :text] str
+                              (string/join " > " (:output output)) "<br>")
                        (recur))
           (throw (ex-info (str "An error in print-paths that shouldn't have happened. `output`=" output) {}))))) 
     ; run `core/find-paths
