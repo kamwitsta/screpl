@@ -340,6 +340,7 @@
 ;; ## Build and print trees
 
 ;; - [grow-tree](#core/grow-tree)
+;; - [find-paths](#core/find-paths)
 ;; - [print-tree](#core/print-tree)
 
 ; - grow-tree ---------------------------------------------------------------------------------- {{{ -
@@ -347,7 +348,7 @@
 ;; <a id="core/grow-tree"></a>
 
 (defn ^:export grow-tree
-  "Pipelines a value through a series of functions while keeping the intermediate results, in effect growing a tree. Functions that do not change the previous value are skipped. Returns a hash-map with the keys `:id`, `:label`, `:value`, `:fname` and `:children` where `:value` is the given node, `:fname` is the name of the function that produces `:children` from it, and `:label` is a convenience copy of `-> :value :display`. Note that besides `:id` there might also be a second, unrelated `:id` inside `:value`."
+  "Pipelines a value through a series of functions while keeping the intermediate results, in effect growing a tree. Functions that do not change the previous value are skipped. Returns a lazy sequence of hash-map with the keys `:id`, `:label`, `:value`, `:fname` and `:children` where `:value` is the given node, `:fname` is the name of the function that produces `:children` from it, and `:label` is a convenience copy of `-> :value :display`. Note that besides `:id` there might also be a second, unrelated `:id` inside `:value`."
   [functions     ; the pipeline
    value]        ; the value to be pipelined
   (let [id-counter (atom -1)]
@@ -370,6 +371,46 @@
                 :children []}))]
      (grow-tree-hlp functions value))))
       
+; ---------------------------------------------------------------------------------------------- }}} -
+; - find-paths --------------------------------------------------------------------------------- {{{ -
+
+;; <a id="core/find-paths"></a>
+
+(defn ^:export find-paths
+  "Finds paths in a tree, from the root to leaves matching a regex. Outputs results to a channel, and returns a set of nodes."
+  [tree         ; search this tree
+   re           ; for leaves matching this regex
+   cancel-ch    ; listening for cancellation on this channel
+   output-ch]   ; and outputting to this channel (can be `nil`)
+  (let [path (atom #{})]
+    (letfn [(search-node
+              [curr-path-id
+               curr-path-label
+               node]
+              (if (some? (async/poll! cancel-ch))
+                (async/>!! output-ch {:status :cancelled})
+                ; if not cancelled
+                (do
+                  ; report progress
+                  (when output-ch
+                    (async/>!! output-ch {:status :progress}))
+                  ; search children
+                  (let [full-path-id    (conj curr-path-id (:id node))
+                        full-path-label (conj curr-path-id (:label node))]
+                    (if (seq (:children node))
+                      ; node
+                      (mapv (partial search-node full-path-id full-path-label) (:children node))
+                      ; leaf
+                      (when (re-find re (:label node))
+                        (swap! path into full-path-id)
+                        ; report find
+                        (when output-ch
+                          (async/>!! output-ch
+                                     {:status :partial
+                                      :output full-path-label}))))))))]
+      (search-node [] [] tree)
+      @path)))
+      
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-tree --------------------------------------------------------------------------------- {{{ -
@@ -383,10 +424,9 @@
    cancel-ch  ; listening for cancellation on this channel
    output-ch] ; and outputting to this channel
   (let [counts (atom {:nodes 0, :leaves 0})]
-    (letfn [(output-progress [text]
+    (letfn [(output-partial [text]
               (async/>!! output-ch
-                         {:status :in-progress
-                          :type :text
+                         {:status :partial
                           :output text}))
 
             (print-node [node class]
@@ -394,16 +434,16 @@
                 (async/>!! output-ch {:status :cancelled})
                 (do
                   ; print the node (1/2)
-                  (output-progress (cond-> "<li"
-                                     class         (str " class=\"" class "\"")
-                                     true          (str ">"(:label node))
-                                     (:fname node) (str " <span class=\"fname\">" (:fname node) "</span>")))
+                  (output-partial (cond-> "<li"
+                                    class         (str " class=\"" class "\"")
+                                    true          (str ">"(:label node))
+                                    (:fname node) (str " <span class=\"fname\">" (:fname node) "</span>")))
                   ; go through the children
                   (if (seq (:children node))
                     ; if node
                     (do
                       (swap! counts update :nodes inc)
-                      (output-progress "<ul>")
+                      (output-partial "<ul>")
                       (loop [children (:children node)]
                         (let [curr-child           (first children)
                               curr-child-on-path   (-> curr-child :id path)
@@ -415,19 +455,17 @@
                               curr-node            (print-node curr-child curr-class)])
                         (when (seq (rest children))
                           (recur (rest children))))
-                      (output-progress "</ul>"))
+                      (output-partial "</ul>"))
                     ; if leaf
                     (swap! counts update :leaves inc))
                   ; print the node (2/2)
-                  (output-progress "</li>")
+                  (output-partial "</li>")
                   ; report progress
-                  (async/>!! output-ch
-                             {:status :in-progress
-                              :type :node-compl}))))]
+                  (async/>!! output-ch {:status :progress}))))]
 
-      (output-progress "<ul class=\"tree\">")
+      (output-partial "<ul class=\"tree\">")
       (print-node tree (when (path (:id tree)) "on-path"))
-      (output-progress "</ul>")
+      (output-partial "</ul>")
       (async/>!! output-ch
                  {:status :completed
                   :counts @counts}))))
@@ -528,5 +566,3 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================== }}} =
-
-(defn ^:export find-paths [] 1)

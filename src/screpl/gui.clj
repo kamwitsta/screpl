@@ -396,9 +396,9 @@
                               :alignment :center-right
                               :spacing 6
                               :children [{:fx/type :button
-                                          :text "Find in tree"
+                                          :text "Print in tree"
                                           :disable (empty? (-> state :selection :source-data))
-                                          :on-action {:event/type ::print-tree}}
+                                          :on-action {:event/type ::print-tree-paths}}
                                          {:fx/type :button
                                           :text "Print paths"
                                           :disable (empty? (-> state :selection :source-data))
@@ -450,8 +450,10 @@
 ;; Wrappers provide a link between [screpl.core](#screpl.core) functions and the GUI. The [event handler](#gui/event-handler) reacts to user’s actions in the GUI and dispatches work to the appropriate wrappers, while simultaneously catching errors from [screpl.core](#screpl.core), allowing it to focus on the happy path.
 
 ;; - [load-project](#gui/load-project)
+;; - [grow-tree](#gui/grow-tree)
 ;; - [print-paths](#gui/print-paths)
 ;; - [print-tree](#gui/print-tree)
+;; - [print-tree-paths](#gui/print-tree-paths)
 ;; - [event-handler(#gui/event-handler)
 
 ; - load-project ------------------------------------------------------------------------------- {{{ -
@@ -497,35 +499,45 @@
                                                        (:sound-changes project)))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
+; - grow-tree ---------------------------------------------------------------------------------- {{{ -
+
+;; <a id="gui/grow-tree"></a>
+
+(defn- grow-tree
+  "Convenience wrapper around `core/grow-tree`, for use by other functions in the gui namespace."
+  []
+  (let [fns (->> @*state :project :sound-changes (filter :active?) (map :item))
+        val (-> @*state :selection :source-data)]
+    (core/grow-tree fns val)))
+
+; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-paths -------------------------------------------------------------------------------- {{{ -
 
-;; <a id="gui/project-paths"></a>
+;; <a id="gui/print-paths"></a>
 
 (defn- print-paths
   "Wrapper around `core/grow-tree` and then `core/find-paths`."
   [_]
-  (let [fns       (->> @*state :project :sound-changes (filter :active?) (map :item))
-        val       (-> @*state :selection :source-data)
-        tree      (core/grow-tree fns val)
+  (let [tree      (grow-tree)
         counter   (atom 0)
         output-ch (async/chan 12)]  ; 12 is just to make sure nothing has to wait
     ; listen for output
     (async/go-loop []
       (when-let [output (async/<! output-ch)]
         (case (:status output)
-          :cancelled   (do
-                         (swap! *state update-in [:output :text] str
-                                "<span style='color:white;background-color:crimson;'>Cancelled.</span>")
-                         (swap! *state assoc :dialog nil))
-          :completed   (swap! *state assoc :dialog nil)     ; close the dialog
-          :in-progress (do
-                         (swap! *state update-in [:output :text] str
-                                (string/join " > " (:output output)) "<br>")
-                         (swap! counter inc)
-                         (when (zero? (mod @counter progress-step))
-                           (swap! *state assoc-in [:dialog :message]
-                                  (str "Checked " (format "%,d" @counter) " leaves…")))
-                         (recur))
+          :cancelled (do
+                       (swap! *state assoc :dialog nil)   ; close the dialog
+                       (swap! *state update-in [:output :text] str
+                              "<span style='color:white;background-color:crimson;'>Cancelled.</span>"))
+          :completed (swap! *state assoc :dialog nil)     ; close the dialog
+          :progress  (do
+                       (swap! *state update-in [:output :text] str
+                              (string/join " > " (:output output)) "<br>")
+                       (swap! counter inc)
+                       (when (zero? (mod @counter progress-step))
+                         (swap! *state assoc-in [:dialog :message]
+                                (str "Checked " (format "%,d" @counter) " leaves…")))
+                       (recur))
           (throw (ex-info (str "An error in print-paths that shouldn't have happened. `output`=" output) {}))))) 
     ; run `core/find-paths
     (async/go
@@ -540,55 +552,71 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-tree --------------------------------------------------------------------------------- {{{ -
 
-;; <a id="gui/project-info"></a>
+;; <a id="gui/print-tree"></a>
 
 (defn- format-tree-tooltip
   "Format a tooltip with basic stats of a tree."
-  [value
-   functions
-   counts]
+  [counts]
   (let [linebreak "%26%2310%3B"]  ; (java.net.URLEncoder/encode "&#10;")
-    (str "A tree from \"" (:display value) "\" through" linebreak
-         "  " (count functions) " sound changes, with" linebreak
+    (str "A tree from \"" (-> @*state :selection :source-data :display) "\" through" linebreak
+         "  " (->> @*state :project :sound-changes (filter :active?) count) " sound changes, with" linebreak
          "  " (format "%,d" (:nodes counts)) " nodes and" linebreak
          "  " (format "%,d" (:leaves counts)) " leaves.")))
 
 (defn- print-tree
   "Wrapper around `core/grow-tree` and then `core/print-tree`."
-  [_]
-  (let [fns       (->> @*state :project :sound-changes (filter :active?) (map :item))
-        val       (-> @*state :selection :source-data)
-        tree      (core/grow-tree (flatten (repeat 16 fns)) val)
+  [_          ; event
+   path]      ; path to highlight
+  (let [tree      (grow-tree)
+        buffer    (atom "")     ; see under :in-progress
         counter   (atom 0)
         output-ch (async/chan 12)]
     ; handle the output from core/print-tree
     (async/go-loop []
       (when-let [output (async/<! output-ch)]
         (case (:status output)
-          :cancelled   (do
-                         (swap! *state assoc :dialog nil)    ; close the dialog
-                         (swap! *state update-in [:output: :text] str "<span style='color:white;background-color:crimson;'>Cancelled.</span>")
-                         (swap! *state assoc-in [:output :tooltip] "Tree printing cancelled."))
-          :completed   (do
-                         (swap! *state assoc :dialog nil)    ; close the dialog
-                         (swap! *state assoc-in [:output :tooltip]
-                                (->> output :counts (format-tree-tooltip val fns))))
-          :in-progress (case (:type output)
-                         :node-compl (do
-                                       (swap! counter inc)
-                                       (when (zero? (mod @counter progress-step))
-                                         (swap! *state assoc-in [:dialog :message]
-                                                (str "Processed " (format "%,d" @counter) " nodes…")))
-                                       (recur))
-                         :text       (do
-                                       (swap! *state update-in [:output :text] str (:output output))
-                                       (recur)))
+          :cancelled (do
+                       (swap! *state assoc :dialog nil)    ; close the dialog
+                       (swap! *state update-in [:output :text] str "<span style='color:white;background-color:crimson;'>Cancelled.</span>")
+                       (swap! *state assoc-in [:output :tooltip] "Tree printing cancelled."))
+          :completed (do
+                       (swap! *state assoc :dialog nil)    ; close the dialog
+                       (swap! *state assoc-in [:output :tooltip]
+                              (->> output :counts format-tree-tooltip)))
+          :partial   (do
+                       ; core/print-tree has no choice but to send lots of tiny updates
+                       ; it's cheaper to do several big updates to output-view than loads of tiny ones
+                       (swap! buffer str (:output output))
+                       (recur))
+          :progress  (do
+                       (swap! counter inc)
+                       (when (zero? (mod @counter progress-step))
+                         (swap! *state assoc-in [:dialog :message]
+                                (str "Processed " (format "%,d" @counter) " nodes…")))
+                       (swap! *state update-in [:output :text] str @buffer)
+                       (reset! buffer "")
+                       (recur))
           (throw (ex-info (str "An error in print-tree that shouldn't have happened. `output`=" output) {}))))) 
     ; run core/print-tree
     (async/go
-      (message :progress-indet)                         ; open dialog
-      (core/print-tree tree #{} cancel-ch output-ch)    ; run core/print-tree
-      (async/close! output-ch))))                       ; clean up
+      (message :progress-indet)                             ; open dialog
+      (swap! *state assoc :output {:text "", :tooltip ""})  ; wipe `output-view`
+      (core/print-tree tree path cancel-ch output-ch)       ; run core/print-tree
+      (async/close! output-ch))))                           ; clean up
+
+; ---------------------------------------------------------------------------------------------- }}} -
+; - print-tree-paths --------------------------------------------------------------------------- {{{ -
+
+;; <a id="gui/print-tree-paths"></a>
+
+(defn- print-tree-paths
+  "Wrapper around `core/grow-tree` and then `core/find-paths` and `core/print-tree`."
+  [_]
+  (let [path (core/find-paths (grow-tree)
+                              (-> @*state :paths-view :pattern re-pattern)
+                              cancel-ch
+                              nil)]
+    (print-tree nil path)))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
@@ -605,7 +633,8 @@
       ; wrappers (must be here so errors are caught)
       ::load-project (load-project event nil)
       ::print-paths (print-paths nil)
-      ::print-tree (print-tree nil)
+      ::print-tree (print-tree nil #{})
+      ::print-tree-paths (print-tree-paths nil)
       ::reload-project (load-project event (-> @*state :project :filename))
 
       ; paths-view
