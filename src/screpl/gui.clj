@@ -36,22 +36,17 @@
 
 (def ^:dynamic *state
   "Global variable, holds the state for the GUI."
-  (atom {; dialog
-         :dialog nil
-         ; output
+  (atom {:dialog nil
          :output {:text ""
                   :tooltip "No results yet."}
-         ; paths
          :paths-view {:pattern ""
                       :intermediate true
                       :showing false}
-         ; project
          :project {:filename nil
+                   :data []
                    :sound-changes []
-                   :source-data []}
-         ; selections (handled by [event-handler](#gui/event-handler)
-         :selection {:source-data nil}
-         ; window
+                   :has-target-data? false}
+         :selection nil   ; handled by [event-handler](#gui/event-handler)
          :window {:height (* column-width 4)
                   :width (* column-width 2)}}))
 
@@ -98,36 +93,47 @@
 
 ;; <a id="gui/data-view"></a>
 
-; - column-maker - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ -
+; - data-columns - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ -
 
-(defn- column-maker
-  "Makes a single column for tables displaying source and target data."
-  [property]    ; the keyword in source- and target-data
-  (case property
-    :display {:fx/type :table-column
-              :cell-value-factory property
-              :pref-width (* column-width 3/4)
-              :text "Display"} 
-    :id      {:fx/type :table-column
-              :cell-value-factory property
-              :pref-width (* column-width 1/4)
-              :text "ID"}
-    (throw (ex-info (str "An error in column factory that shouldn't have happened. `property`=" property) {})))) 
+(defn- data-columns
+  "Makes data columns for `data-view`."
+  [has-target-data?]
+  (let [id-col  {:fx/type :table-column
+                 :cell-value-factory #(-> % first :id)
+                 :pref-width (* column-width 1/4)
+                 :text "ID"}
+        src-col {:fx/type :table-column
+                 :cell-value-factory #(-> % first :display)
+                 :pref-width column-width
+                 :text "Source"}
+        trg-col {:fx/type :table-column
+                 :cell-value-factory #(-> % second :display)
+                 :pref-width column-width
+                 :text "Target"}]
+    (if has-target-data?
+      [id-col src-col trg-col]
+      [src-col])))
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 ; - data-tooltip - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ -
 
 (defn- data-tooltip
-  "Makes a tooltip for source and target datum's."
+  "Makes a tooltip for a data item."
   [item]
-  {:tooltip {:fx/type :tooltip
-             :show-delay [333 :ms]
-             :text (->> item
-                        (map (fn [[k v]] (str (name k) ": " (pr-str v))))
-                        (string/join "\n"))}})
+  (letfn [(get-kvs [[k v]]
+            (if (= k :id)
+              ""
+              (str "  " (name k) ": " (pr-str v) "\n")))]
+    {:tooltip {:fx/type :tooltip
+               :show-delay [333 :ms]
+               :text (str "ID: " (-> item first :id) "\n"
+                          "\nSource:\n"
+                          (->> item first (map get-kvs) (apply str))
+                          "\nTarget:\n"
+                          (->> item second (map get-kvs) (apply str)))}}))
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
-; - item-view - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
+; - scs-item-view - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
 
 (defn- swap-elements
   "Swaps two elements inside a collection. Also works on lazy sequences because `coll` is converted to a vector."
@@ -137,7 +143,7 @@
            i (nth v j)
            j (nth v i))))
 
-(defn- item-view
+(defn- scs-item-view
   "Makes a view for a single sound change."
   [index
    item]
@@ -191,38 +197,24 @@
 (defn- data-view
   "Tables displaying sound changes and data."
   [state]
-  (let [has-target-data? (some? (-> state :project :target-data))]
+  (let [has-target-data? (-> state :project :has-target-data?)]
     {:fx/type :split-pane
      :divider-positions (if has-target-data? [0.333 0.666] [0.5])
-     :items (cond-> [; sound changes
-                     {:fx/type :scroll-pane
-                      :content {:fx/type :v-box
-                                :children (map-indexed item-view (-> state :project :sound-changes))}
-                      :pref-width column-width}
-                     ; source-data
-                     {:fx/type :table-view
-                      :column-resize-policy :constrained  ; don't show an extra column
-                      :columns (if has-target-data?
-                                 [(column-maker :id)
-                                  (column-maker :display)]
-                                 [(column-maker :display)])
-                      :items (-> state :project :source-data)
-                      :on-selected-item-changed {:event/type ::select-source-datum}
-                      :pref-width column-width
-                      :row-factory {:fx/cell-type :table-row
-                                    :describe data-tooltip}
-                      :selection-mode :single}]
-              ; target data
-              has-target-data?
-              (conj {:fx/type :table-view
-                     :column-resize-policy :constrained  ; don't show an extra column
-                     :columns [(column-maker :id)
-                               (column-maker :display)]
-                     :items (-> state :project :target-data)
-                     :pref-width column-width
-                     :row-factory {:fx/cell-type :table-row
-                                   :describe data-tooltip}
-                     :selection-mode :single}))}))
+     :items [; sound changes
+             {:fx/type :scroll-pane
+              :content {:fx/type :v-box
+                        :children (map-indexed scs-item-view (-> state :project :sound-changes))}
+              :pref-width column-width}
+             ; data
+             {:fx/type :table-view
+              :column-resize-policy :constrained  ; don't show an extra column
+              :columns (data-columns has-target-data?)
+              :items (-> state :project :data)
+              :on-selected-item-changed {:event/type ::select-datum}
+              :pref-width (* column-width (if has-target-data? 2.25 1))
+              :row-factory {:fx/cell-type :table-row
+                            :describe data-tooltip}
+              :selection-mode :single}]}))
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 
@@ -303,7 +295,7 @@
                     {:fx/type :menu-item
                      :text "Print tree"
                      :accelerator [:shortcut :t]
-                     :disable (nil? (-> @*state :selection :source-data))
+                     :disable (nil? (-> @*state :selection))
                      :on-action {:event/type ::print-tree}}]}]})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -431,7 +423,7 @@
           :children [(menu-view state)
                      {:fx/type :split-pane
                       ; ↓ forces the recreation of the layout after the data (and in consequence, window size) changes
-                      :fx/key (some? (-> state :project :target-data))
+                      :fx/key (some? (-> state :project :has-target-data?))
                       :divider-positions [0.5]
                       :orientation :vertical
                       :items [(output-view state)
@@ -492,23 +484,20 @@
         ; fname   (or filename (chooser-dialog event))
         fname   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
         project (core/load-project fname)]
-    (swap! *state assoc-in [:project :filename] fname)
     ; change the width of the window to accomodate target data
     ; both height and width must be given, and
     ; both must at least simulate change to trigger cljfx's watch on *state
-    (swap! *state assoc-in [:window :width] (* column-width (if (:target-data project) 3 2)))
+    (swap! *state assoc-in [:window :width] (* column-width (if (:has-target-data? project) 3.25 2.25)))
     (swap! *state update-in [:window :height] (fnil inc 0))
     ; load data into *state
-    (if (:target-data project)
-        (swap! *state assoc-in [:project :target-data] (:target-data project))
-        (swap! *state update :project dissoc :target-data))
-    (swap! *state assoc-in [:project :source-data] (:source-data project))
-    (swap! *state assoc-in [:project :sound-changes] (map-indexed
-                                                       (fn [idx itm]
-                                                         (hash-map :active? true
-                                                                 :id idx
-                                                                 :item itm))
-                                                       (:sound-changes project)))))
+    (let [scs (map-indexed
+                (fn [idx itm]
+                  (hash-map :active? true
+                            :id idx
+                            :item itm))
+                (:sound-changes project))
+          new-project (assoc project :sound-changes scs)]
+      (swap! *state assoc :project new-project))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - grow-tree ---------------------------------------------------------------------------------- {{{ -
@@ -661,7 +650,7 @@
       ::toggle-paths-view (swap! *state update-in [:paths-view :showing] not)
 
       ; selections
-      ::select-source-datum (swap! *state assoc-in [:selection :source-data] (:fx/event event))
+      ::select-datum (swap! *state assoc :selection (:fx/event event))
 
       ; other
       ::cancel-operation (async/>!! cancel-ch :cancel)

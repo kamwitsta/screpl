@@ -30,6 +30,8 @@
 
 ;; - [attach-to-path](#core/attach-to-path)
 ;; - [duplicates](#core/duplicates)
+;; - [index-coll](#core/index-coll)
+;; - [make-reporter](#core/make-reporter)
 ;; - [map-equal?](#core/map-equal?)
 ;; - [pmap-daemon](#core/pmap-daemon)
 
@@ -63,6 +65,34 @@
   ([coll n]
    (for [[x f] (->> coll (remove nil?) frequencies)
          :when (>= f n)] x)))
+
+; ---------------------------------------------------------------------------------------------- }}} -
+; - index-coll --------------------------------------------------------------------------------- {{{ -
+
+;; <a id="core/index-coll"></a>
+
+(defn index-coll [coll & [key]]
+  "Convert a collection of maps to an indexed collection. If `key` is not given, uses `:id`."
+  (let [key (or key :id)]
+    (persistent! 
+      (reduce (fn [acc item] 
+                (assoc! acc (get item key) item))
+              (transient {})
+              coll))))
+
+; ---------------------------------------------------------------------------------------------- }}} -
+; - make-reporter ------------------------------------------------------------------------------ {{{ -
+
+;; <a id="core/make-reporter"></a>
+
+(defn make-reporter
+  "Generates a function that reports to a channel."
+  [output-ch]   ; each core function receives it independently from the gui
+  (fn [status & [output]]
+    (when output-ch
+      (async/>!! output-ch
+                 {:status status
+                  :output output}))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - map-equal? --------------------------------------------------------------------------------- {{{ -
@@ -231,37 +261,46 @@
 (defn load-data
   "Reads and validates source and target data. Returns a hash map with `:source-data` and `target-data`."
   [project]
-  (letfn [(validator [spec idx itm]
-            (try
-              (m/assert spec itm)
-              (catch Exception e
-                (let [data (-> e ex-data :data :explain)]
-                  (throw (ex-info (-> data me/humanize str)
-                                  {:display (-> data :value :display)
-                                   :field (-> data :errors first :in first)
-                                   :index (inc idx)
-                                   :filename (if (= spec SourceDatum)
-                                               "source data"
-                                               "target data")}))))))
-          (loader [key]
-            (->> project
-                 key
-                 (attach-to-path (:project-file project))
-                 (slurp)
-                 (edn/read-string)))]
+  (letfn
+    [(loader [key]
+      (->> project
+           key
+           (attach-to-path (:project-file project))
+           (slurp)
+           (edn/read-string)))
+
+     ; {:source-data [s]} -> [[s] [s] …]
+     ; {:source-data [s], :target-data [t]} -> [[s t] [s t] …]
+     (pair-maker [{:keys [source-data target-data]}]
+        (if target-data
+          (let [target-indexed (index-coll target-data)]
+            (for [s source-data]
+              [s (-> s :id target-indexed)]))
+          (map vector source-data)))
+     
+     (validator [spec idx itm]
+       (try
+          (m/assert spec itm)
+          (catch Exception e
+            (let [data (-> e ex-data :data :explain)]
+              (throw (ex-info (-> data me/humanize str)
+                              {:display (-> data :value :display)
+                               :field (-> data :errors first :in first)
+                               :index (inc idx)
+                               :filename (if (= spec SourceDatum) "source data" "target data")}))))))]
+
     (let [data (if (:get-data-fn project)
                  ; load from a database
                  ((:get-data-fn project))
                  ; load from files
-                 (let [res {:source-data (loader :source-data)}] 
-                   (if (:target-data project)
-                     (merge res {:target-data (loader :target-data)})
-                     res)))]
+                 (cond-> {:source-data (loader :source-data)}
+                   (:target-data project)
+                   (assoc :target-data (loader :target-data))))]
       (doall (map-indexed (partial validator SourceDatum) (:source-data data)))
       (when (:target-data data)
         (doall (map-indexed (partial validator TargetDatum) (:target-data data)))
         (check-ids data))
-      data)))
+      (pair-maker data))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - load-scs ----------------------------------------------------------------------------------- {{{ -
@@ -328,8 +367,10 @@
   (let [project (load-projectfile filename)
         scs     (load-scs project)
         data    (load-data project)]
-    (merge data {:project-file filename     ; data might be both source and target or just source
-                 :sound-changes scs})))
+    {:filename filename
+     :data data
+     :has-target-data? (-> data first count (= 2))
+     :sound-changes scs}))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
@@ -380,19 +421,12 @@
   "Finds paths in a tree, from the root to leaves matching a regex. Outputs results to a channel, and returns a set of nodes."
   [tree            ; search this tree
    re              ; for leaves matching this regex
-   intermediate    ; if false, search only leaves
+   intermediate?   ; if false, search only leaves
    cancel-ch       ; listening for cancellation on this channel
    output-ch]      ; and outputting to this channel (can be `nil`)
-  (let [path (atom #{})]    ; only collects ids on path, for printing path in tree
-    (letfn [(report! [status & [output]]
-              (when output-ch
-                (async/>!! output-ch (cond-> {:status status}
-                                       output (assoc :output output)))))
-            
-            (search-node
-              [curr-path-id
-               curr-path-label
-               node]
+  (let [report! (make-reporter output-ch)
+        path    (atom #{})]    ; only collects ids on path, for printing path in tree
+    (letfn [(search-node [curr-path-id curr-path-label node]
               (if (some? (async/poll! cancel-ch))
                 (report! :cancelled)
                 ; if not cancelled
@@ -400,16 +434,17 @@
                   (report! :progress)
                   ; search children
                   (let [full-path-id    (conj curr-path-id (:id node))
-                        full-path-label (conj curr-path-label (:label node))]
+                        full-path-label (conj curr-path-label (:label node))
+                        matches?        (re-find re (:label node))]
                     (if (seq (:children node))
                       ; node
                       (do
-                        (when (and intermediate (re-find re (:label node)))
+                        (when (and intermediate? matches?)
                           (swap! path into full-path-id)
                           (report! :partial (conj full-path-label "…")))
                         (mapv (partial search-node full-path-id full-path-label) (:children node)))
                       ; leaf
-                      (when (re-find re (:label node))
+                      (when matches?
                         (swap! path into full-path-id)
                         (report! :partial full-path-label)))))))]
 
@@ -429,12 +464,9 @@
    path       ; while highlighting the path to the points in this set
    cancel-ch  ; listening for cancellation on this channel
    output-ch] ; and outputting to this channel
-  (let [counts (atom {:nodes 0, :leaves 0})]
-    (letfn [(report! [status & [output]]
-              (async/>!! output-ch (cond-> {:status status}
-                                     output (assoc :output output))))
-
-            (print-node [node class]
+  (let [report! (make-reporter output-ch)
+        counts  (atom {:nodes 0, :leaves 0})]
+    (letfn [(print-node [node class]
               (if (some? (async/poll! cancel-ch))
                 (async/>!! output-ch {:status :cancelled})
                 (do
