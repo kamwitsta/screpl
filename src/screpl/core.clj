@@ -382,6 +382,7 @@
 
 ;; - [grow-tree](#core/grow-tree)
 ;; - [find-paths](#core/find-paths)
+;; - [print-leaves](#core/print-leaves)
 ;; - [print-tree](#core/print-tree)
 
 ; - grow-tree ---------------------------------------------------------------------------------- {{{ -
@@ -454,6 +455,27 @@
       
 
 ; ---------------------------------------------------------------------------------------------- }}} -
+; - print-leaves ------------------------------------------------------------------------------- {{{ -
+
+;; <a id="core/print-leaves"></a>
+
+;; Not exactly a tree operation. Trees are stored as lazy sequences, so in order to collect the leaves, they have to be first realized. Simply pipelining a value requires the application of all the same sound changes, and saves the overhead of storing the intermediate values.
+(defn print-leaves
+  "Print the products of pipelining a value through a series of functions."
+  [functions  ; the pipeline
+   value      ; the value to be pipelined
+   cancel-ch  ; listen for cancellation
+   output-ch] ; report partial results
+  (let [report! (make-reporter output-ch)]
+    (letfn [(pipeline [x f]
+              (if (some? (async/poll! cancel-ch))
+                (report! :cancelled)
+                (do
+                  (report! :progress)
+                  (mapcat f x))))]
+      (report! :completed (reduce pipeline value functions)))))
+
+; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-tree --------------------------------------------------------------------------------- {{{ -
 
 ;; <a id="core/print-tree"></a>
@@ -516,34 +538,8 @@
 ;; Functions that do not care about the nodes, only about the leaves. It is faster to generate just the leaves than to extract them from a [core/Tree](#core/tree).
 
 ;; - [find-irregulars](#core/find-irregulars)
-;; - [print-products](#core/print-products)
 ;; - [produces-target?](#core/produces-target?)
 
-; - print-products ----------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/print-products"></a>
-
-(defn print-products
-  "Applies a series of `functions` to the `source` and prints the results. `source` can be a single hash map or a vector."
-  [functions    ; apply these functions (must be a vector)
-   source       ; to this map / these maps
-   output-fn]   ; and print using this function
-  (letfn [(print-one [src]
-            (let [products (reduce (fn [x f] (mapcat f x))
-                                   [src]
-                                   functions)]
-              (output-fn (str (:display src) " → "))
-              (loop [prod products]
-                (output-fn (-> prod first :display))
-                (when (next prod)
-                  (output-fn ", ")
-                  (recur (next prod))))
-              (output-fn "\n")))]
-    (mapv print-one (if (map? source)
-                      (vector source)
-                      source))))
-
-; ---------------------------------------------------------------------------------------------- }}} -
 ; - produces-target? --------------------------------------------------------------------------- {{{ -
 
 ;; <a id="core/produces-target?"></a>

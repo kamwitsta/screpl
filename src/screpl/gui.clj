@@ -237,7 +237,7 @@
        :on-close-request {:event/type ::close-dialog}
        :showing true}
 
-      :progress-indet
+      :progress
       {:fx/type :stage
        :modality :application-modal     ; block the main window
        :scene {:fx/type :scene
@@ -246,12 +246,16 @@
                       :spacing 6
                       :children [{:fx/type :label
                                   :text (:message dialog)}
-                                 {:fx/type :progress-indicator
-                                  :max-height 24
-                                  :max-width 24
-                                  :min-height 24
-                                  :min-width 24
-                                  :progress -1}
+                                 (if (pos? (-> state :dialog :progress))
+                                   ; when the max value is known
+                                   {:fx/type :progress-bar
+                                    :progress (-> state :dialog :progress)}
+                                   ; when it isn't
+                                   {:fx/type :progress-indicator
+                                    :max-height 24
+                                    :max-width 24
+                                    :min-height 24
+                                    :min-width 24})
                                  {:fx/type :button
                                   :on-action {:event/type ::cancel-operation}
                                   :text "Cancel"}]}}
@@ -287,11 +291,16 @@
                      :accelerator [:shortcut :q]
                      :on-action stop-gui}]}
            {:fx/type :menu
-            :text "Tree"
+            :text "Single"
             :items [{:fx/type :menu-item
                      :text "Paths"
                      :accelerator [:shortcut :f]
                      :on-action {:event/type ::toggle-paths-view}}
+                    {:fx/type :menu-item
+                     :text "Print leaves"
+                     :accelerator [:shortcut :l]
+                     :disable (nil? (-> @*state :selection))
+                     :on-action {:event/type ::print-leaves}}
                     {:fx/type :menu-item
                      :text "Print tree"
                      :accelerator [:shortcut :t]
@@ -401,11 +410,11 @@
                                           :spacing 6
                                           :children [{:fx/type :button
                                                       :text "Print in tree"
-                                                      :disable (empty? (-> state :selection :source-data))
+                                                      :disable (empty? (-> state :selection))
                                                       :on-action {:event/type ::print-tree-paths}}
                                                      {:fx/type :button
                                                       :text "Print paths"
-                                                      :disable (empty? (-> state :selection :source-data))
+                                                      :disable (empty? (-> state :selection))
                                                       :on-action {:event/type ::print-paths}}]}]}]}}
    :showing (-> state :paths-view :showing)
    :title "Paths"})
@@ -455,6 +464,7 @@
 
 ;; - [load-project](#gui/load-project)
 ;; - [grow-tree](#gui/grow-tree)
+;; - [print-leaves](#gui/print-leaves)
 ;; - [print-paths](#gui/print-paths)
 ;; - [print-tree](#gui/print-tree)
 ;; - [print-tree-paths](#gui/print-tree-paths)
@@ -508,8 +518,48 @@
   "Convenience wrapper around `core/grow-tree`, for use by other functions in the gui namespace."
   []
   (let [fns (->> @*state :project :sound-changes (filter :active?) (map :item))
-        val (-> @*state :selection :source-data)]
+        val (-> @*state :selection first)]
     (core/grow-tree fns val)))
+
+; ---------------------------------------------------------------------------------------------- }}} -
+; - print-leaves ------------------------------------------------------------------------------- {{{ -
+
+;; <a id="gui/print-leaves"></a>
+
+(defn- print-leaves
+  "Wrapper around `core/print-leaves`."
+  [_]
+  (let [functions   (->> @*state :project :sound-changes (filter :active?) (map :item))
+        counter     (atom 0)
+        output-ch   (async/chan 12)]  ; 12 is just to make sure nothing has to wait
+    ; listen for output
+    (async/go-loop []
+      (when-let [output (async/<! output-ch)]
+        (case (:status output)
+          :cancelled (do
+                       (swap! *state assoc :dialog nil)   ; close the dialog
+                       (swap! *state update-in [:output :text] str
+                              "<span style='color:white;background-color:crimson;'>Cancelled.</span>"))
+          :completed (do
+                       (swap! *state assoc :dialog nil)     ; close the dialog
+                       (swap! *state assoc-in [:output :text]
+                              (str (-> @*state :selection first :display) " ≫ "
+                                   (->> output :output (map :display) (string/join ", ")))))
+          :progress  (do
+                       (swap! counter inc)
+                       (swap! *state assoc-in [:dialog :progress]
+                              (/ @counter (count functions)))
+                       (recur))
+          (throw (ex-info (str "An error in print-paths that shouldn't have happened. `output`=" output) {}))))) 
+    ; run `core/find-paths
+    (async/go
+      (message :progress)                                     ; open dialog
+      (swap! *state assoc :output {:text "", :tooltip ""})    ; wipe `output-view`
+      (core/print-leaves functions                            ; actually run the thing
+                         (-> @*state :selection first vector)
+                         cancel-ch
+                         output-ch) 
+      (async/close! output-ch))))                             ; clean up
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-paths -------------------------------------------------------------------------------- {{{ -
@@ -544,7 +594,7 @@
           (throw (ex-info (str "An error in print-paths that shouldn't have happened. `output`=" output) {}))))) 
     ; run `core/find-paths
     (async/go
-      (message :progress-indet)                                 ; open dialog
+      (message :progress)                                       ; open dialog
       (swap! *state assoc :output {:text "", :tooltip ""})      ; wipe `output-view`
       (core/find-paths tree                                     ; actually run the thing
                        (re-pattern (-> @*state :paths-view :pattern))
@@ -603,7 +653,7 @@
           (throw (ex-info (str "An error in print-tree that shouldn't have happened. `output`=" output) {}))))) 
     ; run core/print-tree
     (async/go
-      (message :progress-indet)                             ; open dialog
+      (message :progress)                                   ; open dialog
       (swap! *state assoc :output {:text "", :tooltip ""})  ; wipe `output-view`
       (core/print-tree tree path cancel-ch output-ch)       ; run core/print-tree
       (async/close! output-ch))))                           ; clean up
@@ -637,6 +687,7 @@
 
       ; wrappers (must be here so errors are caught)
       ::load-project (load-project event nil)
+      ::print-leaves (print-leaves nil)
       ::print-paths (print-paths nil)
       ::print-tree (print-tree nil #{})
       ::print-tree-paths (print-tree-paths nil)
@@ -679,22 +730,23 @@
 
 (defn- message
   "Displays a dialog with a message."
-  [type          ; :error, :progress-indet
+  [type          ; :error, :progress
    & messages]   ; an Exception when :error, string(s) or number(s) otherwise
   (case type
-    :error          (let [err      (-> messages first Throwable->map)
-                          data     (:data err)
-                          location (cond-> []
-                                     (:filename data) (conj (str " in " (:filename data)))
-                                     (:index data)    (conj (str " in item " (:index data)))
-                                     (:display data)  (conj (str " (" (:display data) ")"))
-                                     (:field data)    (conj (str " in " (:field data))))]
-                      (swap! *state assoc :dialog
-                             {:type :error
-                              :message (str "Error" (apply str location) ":\n" (:cause err))}))
-    :progress-indet (swap! *state assoc :dialog
-                           {:type :progress-indet
-                            :message "Processing…"})))
+    :error    (let [err      (-> messages first Throwable->map)
+                    data     (:data err)
+                    location (cond-> []
+                               (:filename data) (conj (str " in " (:filename data)))
+                               (:index data)    (conj (str " in item " (:index data)))
+                               (:display data)  (conj (str " (" (:display data) ")"))
+                               (:field data)    (conj (str " in " (:field data))))]
+                (swap! *state assoc :dialog
+                       {:type :error
+                        :message (str "Error" (apply str location) ":\n" (:cause err))}))
+    :progress (swap! *state assoc :dialog
+                     {:type :progress
+                      :message "Processing…"
+                      :progress -1})))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
