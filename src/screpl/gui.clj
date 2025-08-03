@@ -22,7 +22,7 @@
 ;; <a id="gui/globals"></a>
 ;; ## Global variables
 
-(declare load-project message print-paths print-tree stop-gui unescape-unicode)
+(declare filter-data load-project message print-paths print-tree stop-gui unescape-unicode)
 
 ;; Used to pass `:cancel` messages to `core` functions.
 (def cancel-ch (async/chan))
@@ -36,17 +36,26 @@
 
 (def ^:dynamic *state
   "Global variable, holds the state for the GUI."
-  (atom {:dialog nil
+  (atom {; dialog window for errors and progress reporting
+         :dialog nil
+         ; filtering data in `data-view`
+         :filter-pattern ""
+         ; `output-view`
          :output {:text ""
                   :tooltip "No results yet."}
+         ; `paths-view` window
          :paths-view {:pattern ""
                       :intermediate true
                       :showing false}
+         ; the loaded project
          :project {:filename nil
                    :data []
+                   :data-filtered []
                    :sound-changes []
                    :has-target-data? false}
-         :selection nil   ; handled by [event-handler](#gui/event-handler)
+         ; selected item in `data-view` (handled by `event-handler`
+         :selection nil 
+         ; size of the main window
          :window {:height (* column-width 4)
                   :width (* column-width 2)}}))
 
@@ -63,13 +72,15 @@
 
 (defn- sample-strings
   "Generate strings that match a pattern (given as a String)."
-  [pattern    ; match this pattern
-   n]        ; return this many samples
-  (str "Sample matching strings:\n  "
-     (let [grx (Generex. (unescape-unicode pattern))]
-       (->> (repeatedly #(.random grx))
-            (take n)
-            (string/join "\n  ")))))
+  [pattern    ; (String) match this pattern
+   & n]       ; return this many samples (3 if not given)
+  (try
+    (str "Sample matching strings:\n  "
+      (let [grx (Generex. (unescape-unicode pattern))]
+        (->> (repeatedly #(.random grx))
+             (take (or n 3))
+             (string/join "\n  "))))
+    (catch Exception e "invalid regular expression")))
 
 (defn unescape-unicode
   "Convert Unicode escape sequence to actual character."
@@ -131,11 +142,12 @@
               (str "  " (name k) ": " (pr-str v) "\n")))]
     {:tooltip {:fx/type :tooltip
                :show-delay [333 :ms]
-               :text (str "ID: " (-> item first :id) "\n"
-                          "\nSource:\n"
-                          (->> item first (map get-kvs) (apply str))
-                          "\nTarget:\n"
-                          (->> item second (map get-kvs) (apply str)))}}))
+               :text (cond-> (str "ID: " (-> item first :id) "\n"
+                                 "\nSource:\n"
+                                 (->> item first (map get-kvs) (apply str)))
+                       (-> @*state :project :has-target-data?)
+                       (str "\nTarget:\n"
+                            (->> item second (map get-kvs) (apply str))))}}))
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 ; - scs-item-view - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
@@ -197,8 +209,6 @@
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 
-; - data-view - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
-
 (defn- data-view
   "Tables displaying sound changes and data."
   [state]
@@ -211,17 +221,30 @@
                         :children (map-indexed scs-item-view (-> state :project :sound-changes))}
               :pref-width column-width}
              ; data
-             {:fx/type :table-view
-              :column-resize-policy :constrained  ; don't show an extra column
-              :columns (data-columns has-target-data?)
-              :items (-> state :project :data)
-              :on-selected-item-changed {:event/type ::select-datum}
-              :pref-width (* column-width (if has-target-data? 2.25 1))
-              :row-factory {:fx/cell-type :table-row
-                            :describe data-tooltip}
-              :selection-mode :single}]}))
-
-; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
+             {:fx/type :v-box
+              :children [{:fx/type :h-box
+                          :children [{:fx/type :text-field
+                                      :prompt-text "Filter using regular expressions"
+                                      :text (-> state :filter-pattern)
+                                      :h-box/hgrow :always
+                                      :on-key-pressed {:event/type ::filter-key-pressed}
+                                      :on-text-changed {:event/type ::change-filter-pattern}
+                                      :tooltip {:fx/type :tooltip
+                                                :show-delay [333 :ms]
+                                                :text (-> state :filter-pattern sample-strings)}}
+                                     {:fx/type :button
+                                      :text "Filter"
+                                      :disable (-> @*state :project :filename nil?)
+                                      :on-action {:event/type ::filter-data}}]}
+                         {:fx/type :table-view
+                          :column-resize-policy :constrained  ; don't show an extra column
+                          :columns (data-columns has-target-data?)
+                          :items (-> state :project :data-filtered)
+                          :on-selected-item-changed {:event/type ::select-datum}
+                          :pref-width (* column-width (if has-target-data? 2.25 1))
+                          :row-factory {:fx/cell-type :table-row
+                                        :describe data-tooltip}
+                          :selection-mode :single}]}]}))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - dialog ------------------------------------------------------------------------------------- {{{ -
@@ -288,7 +311,7 @@
                     {:fx/type :menu-item
                      :text "Reload project"
                      :accelerator [:shortcut :r]
-                     :disable (nil? (-> @*state :project :filename))
+                     :disable (-> @*state :project :filename nil?)
                      :on-action {:event/type ::reload-project}}
                     {:fx/type :separator-menu-item}
                     {:fx/type :menu-item
@@ -304,19 +327,19 @@
                     {:fx/type :menu-item
                      :text "Print leaves"
                      :accelerator [:shortcut :l]
-                     :disable (nil? (-> @*state :selection))
+                     :disable (-> @*state :selection nil?)
                      :on-action {:event/type ::print-leaves}}
                     {:fx/type :menu-item
                      :text "Print tree"
                      :accelerator [:shortcut :t]
-                     :disable (nil? (-> @*state :selection))
+                     :disable (-> @*state :selection nil?)
                      :on-action {:event/type ::print-tree}}]}
            {:fx/type :menu
             :text "Batch"
             :items [{:fx/type :menu-item
                      :text "Find irregulars"
                      :accelerator [:shortcut :i]
-                     :disable (not (-> @*state :project :has-target-data?))
+                     :disable (-> @*state :project :has-target-data? not)
                      :on-action {:event/type ::find-irregulars}}]}]})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -356,13 +379,15 @@
                   :children [{:fx/type :text-field
                               :on-text-changed {:event/type ::change-paths-pattern}}
                              {:fx/type :label
-                              :text (sample-strings (-> state :paths-view :pattern) 3)}
+                              :text (-> state :paths-view :pattern sample-strings)}
                              {:fx/type :separator}
                              {:fx/type :h-box
                               :spacing 6
                               :children [{:fx/type :v-box
                                           :children [{:fx/type :label
                                                       :text "."}
+                                                     {:fx/type :label
+                                                      :text "\\."}
                                                      {:fx/type :label
                                                       :text "\\u0000"}
                                                      {:fx/type :label
@@ -384,6 +409,8 @@
                                          {:fx/type :v-box
                                           :children [{:fx/type :label
                                                       :text "any character"}
+                                                     {:fx/type :label
+                                                      :text "dot"}
                                                      {:fx/type :label
                                                       :text "Unicode character"}
                                                      {:fx/type :label
@@ -421,12 +448,12 @@
                                           :alignment :center-right
                                           :spacing 6
                                           :children [{:fx/type :button
-                                                      :text "Print in tree"
-                                                      :disable (empty? (-> state :selection))
-                                                      :on-action {:event/type ::print-tree-paths}}
+                                                      :text "Print in tree"}
+                                                     :disable (-> state :selection empty?)
+                                                      :on-action {:event/type ::print-tree-paths}
                                                      {:fx/type :button
                                                       :text "Print paths"
-                                                      :disable (empty? (-> state :selection))
+                                                      :disable (-> state :selection empty?)
                                                       :on-action {:event/type ::print-paths}}]}]}]}}
    :showing (-> state :paths-view :showing)
    :title "Paths"})
@@ -524,7 +551,7 @@
       (message :progress)                                       ; open dialog
       (swap! *state assoc :output {:text "", :tooltip ""})      ; wipe `output-view`
       (core/find-irregulars functions                           ; actually run the thing
-                            (-> @*state :project :data)
+                            (-> @*state :project :data-filtered)
                             cancel-ch
                             output-ch)
       (async/close! output-ch))))                               ; clean up
@@ -546,6 +573,8 @@
 
 ;; <a id="gui/load-project"></a>
 
+; - chooser-dialog - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ -
+
 (defn- chooser-dialog
   "Opens a file chooser dialog."
   [event]
@@ -557,19 +586,20 @@
     (when-let [selected-file (.showOpenDialog chooser window)]
       (.getAbsolutePath selected-file))))
 
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
+
 (defn- load-project
   "Wrapper around `core/load-project`."
   [event
    filename]     ; open dialog if nil
   ; get the filename, from the event handler, or from a dialog
-  (let [
-        ; fname   (or filename (chooser-dialog event))
+  (let [; fname   (or filename (chooser-dialog event))
         fname   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
         project (core/load-project fname)]
     ; change the width of the window to accomodate target data
     ; both height and width must be given, and
     ; both must at least simulate change to trigger cljfx's watch on *state
-    (swap! *state assoc-in [:window :width] (* column-width (if (:has-target-data? project) 3.25 2.25)))
+    (swap! *state assoc-in [:window :width] (* column-width (if (:has-target-data? project) 3.25 2)))
     (swap! *state update-in [:window :height] (fnil inc 0))
     ; load data into *state
     (let [scs (map-indexed
@@ -578,13 +608,17 @@
                             :id idx
                             :item itm))
                 (:sound-changes project))
-          new-project (assoc project :sound-changes scs)]
+          new-project (assoc project
+                             :sound-changes scs
+                             :data-filtered (:data project))]
       (swap! *state assoc :project new-project))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-leaves ------------------------------------------------------------------------------- {{{ -
 
 ;; <a id="gui/print-leaves"></a>
+
+; - format-leaves - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
 
 (defn- format-leaves
   "Format leaves for printing: highlight match with target and add commas."
@@ -597,6 +631,8 @@
                  (str "<span style='color:limegreen'>" % "</span>")
                  %))
          (string/join ", "))))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 
 (defn- print-leaves
   "Wrapper around `core/print-leaves`."
@@ -679,6 +715,8 @@
 
 ;; <a id="gui/print-tree"></a>
 
+; - format-tree-tooltip - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
+
 (defn- format-tree-tooltip
   "Format a tooltip with basic stats of a tree."
   [counts]
@@ -687,6 +725,8 @@
          "  " (count (get-active-functions)) " sound changes, with" linebreak
          "  " (format "%,d" (:nodes counts)) " nodes and" linebreak
          "  " (format "%,d" (:leaves counts)) " leaves.")))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 
 (defn- print-tree
   "Wrapper around `core/grow-tree` and then `core/print-tree`."
@@ -765,6 +805,17 @@
       ::print-tree-paths (print-tree-paths nil)
       ::reload-project (load-project event (-> @*state :project :filename))
 
+      ; filtering
+      ::change-filter-pattern (swap! *state assoc :filter-pattern (:fx/event event))
+      ::filter-data (filter-data nil)
+      ::filter-key-pressed (case (-> event :fx/event .getCode .getName)
+                             "Enter" (event-handler {:event/type ::filter-data})
+                             "Esc"   (do
+                                       (swap! *state assoc :filter-pattern "")
+                                       (event-handler {:event/type ::filter-data})
+                                       (-> event :fx/event .getTarget .getParent .requestFocus))
+                             nil)
+
       ; paths-view
       ::change-paths-pattern (swap! *state assoc-in [:paths-view :pattern] (:fx/event event))
       ::close-paths-view (swap! *state assoc-in [:paths-view :showing] false)
@@ -791,11 +842,33 @@
 
 ;; The more technical parts: managing the GUI, and displaying dialogs.
 
+;; - [filter-data](#gui/filter-data)
 ;; - [message](#gui/message)
 ;; - [renderer](#gui/renderer)
 ;; - [start-gui](#gui/start-gui)
 ;; - [stop-gui](#gui/stop-gui)
 
+; - filter-data -------------------------------------------------------------------------------- {{{ -
+
+;; <a id="gui/filter-data"></a>
+
+(defn- filter-data
+  "Filters the data displayed in `data-view`."
+  [_]
+  (if (= "" (:filter-pattern @*state))
+    (swap! *state assoc-in [:project :data-filtered] (-> @*state :project :data))
+    (let [pattern (-> @*state :filter-pattern re-pattern)
+          result  (filter
+                    #(->> %                              ; ({:id 1, :display "s"} {:id 1, :display "t"})
+                         (map vals)                      ; ((1 "s") (1 "t"))
+                         flatten                         ; (1 "s" 1 "t")
+                         (map str)                       ; ("1" "s" "1" "t")
+                         (map (partial re-find pattern)) ; (nil "s" nil nil)
+                         (not-every? nil?))              ; true
+                    (-> @*state :project :data))]
+      (swap! *state assoc-in [:project :data-filtered] result))))
+
+; ---------------------------------------------------------------------------------------------- }}} -
 ; - message ------------------------------------------------------------------------------------ {{{ -
 
 ;; <a id="gui/message"></a>
