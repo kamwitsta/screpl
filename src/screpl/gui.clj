@@ -56,6 +56,11 @@
 ;; <a id="gui/general"></a>
 ;; ## General utility functions
 
+(defn- get-active-functions
+  "Gets active sound change functions from *state."
+  []
+  (->> @*state :project :sound-changes (filter :active?) (map :item)))
+
 (defn- sample-strings
   "Generate strings that match a pattern (given as a String)."
   [pattern    ; match this pattern
@@ -305,7 +310,14 @@
                      :text "Print tree"
                      :accelerator [:shortcut :t]
                      :disable (nil? (-> @*state :selection))
-                     :on-action {:event/type ::print-tree}}]}]})
+                     :on-action {:event/type ::print-tree}}]}
+           {:fx/type :menu
+            :text "Batch"
+            :items [{:fx/type :menu-item
+                     :text "Find irregulars"
+                     :accelerator [:shortcut :i]
+                     :disable (not (-> @*state :project :has-target-data?))
+                     :on-action {:event/type ::find-irregulars}}]}]})
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - output ------------------------------------------------------------------------------------- {{{ -
@@ -462,14 +474,74 @@
 
 ;; Wrappers provide a link between [screpl.core](#screpl.core) functions and the GUI. The [event handler](#gui/event-handler) reacts to user’s actions in the GUI and dispatches work to the appropriate wrappers, while simultaneously catching errors from [screpl.core](#screpl.core), allowing it to focus on the happy path.
 
-;; - [load-project](#gui/load-project)
+;; - [find-irregulars](#gui/find-irregulars)
 ;; - [grow-tree](#gui/grow-tree)
+;; - [load-project](#gui/load-project)
 ;; - [print-leaves](#gui/print-leaves)
 ;; - [print-paths](#gui/print-paths)
 ;; - [print-tree](#gui/print-tree)
 ;; - [print-tree-paths](#gui/print-tree-paths)
 ;; - [event-handler(#gui/event-handler)
 
+; - find-irregulars ---------------------------------------------------------------------------- {{{ -
+
+;; <a id="gui/find-irregulars"></a>
+
+(defn- find-irregulars
+  "Wrapper around `core/grow-tree`, for use by other functions in the gui namespace."
+  [_]
+  (let [counter   (atom 0)
+        functions (get-active-functions)
+        output-ch (async/chan 12)]
+    ; listen for output
+    (async/go-loop []
+      (when-let [output (async/<! output-ch)]
+        (case (:status output)
+          :cancelled (do
+                       (swap! *state assoc :dialog nil)   ; close the dialog
+                       (swap! *state update-in [:output :text] str
+                              "<span style='color:white;background-color:crimson;'>Cancelled.</span>"))
+          :completed (swap! *state assoc :dialog nil)     ; close the dialog
+          :partial   (do
+                       (swap! *state update-in [:output :text] str
+                              (str "Expected: "
+                                   (-> output :output :item first :display)
+                                   " ≫ "
+                                   (-> output :output :item second :display)
+                                   "<br>"
+                                   "Instead: "
+                                   (->> output :output :result (string/join ", "))
+                                   "<br><br>"))
+                       (recur))
+          :progress  (do
+                       (swap! counter inc)
+                       (swap! *state assoc-in [:dialog :progress]
+                              (/ @counter (count functions)))
+                       (recur))
+          (throw (ex-info (str "An error in find-irregulars that shouldn't have happened. `output`=" output) {}))))) 
+    ; run `core/find-irregulars`
+    (async/go
+      (message :progress)                                       ; open dialog
+      (swap! *state assoc :output {:text "", :tooltip ""})      ; wipe `output-view`
+      (core/find-irregulars functions                           ; actually run the thing
+                            (-> @*state :project :data)
+                            cancel-ch
+                            output-ch)
+      (async/close! output-ch))))                               ; clean up
+
+; ---------------------------------------------------------------------------------------------- }}} -
+; - grow-tree ---------------------------------------------------------------------------------- {{{ -
+
+;; <a id="gui/grow-tree"></a>
+
+(defn- grow-tree
+  "Convenience wrapper around `core/grow-tree`, for use by other functions in the gui namespace."
+  []
+  (let [fns (get-active-functions)
+        val (-> @*state :selection first)]
+    (core/grow-tree fns val)))
+
+; ---------------------------------------------------------------------------------------------- }}} -
 ; - load-project ------------------------------------------------------------------------------- {{{ -
 
 ;; <a id="gui/load-project"></a>
@@ -510,26 +582,26 @@
       (swap! *state assoc :project new-project))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
-; - grow-tree ---------------------------------------------------------------------------------- {{{ -
-
-;; <a id="gui/grow-tree"></a>
-
-(defn- grow-tree
-  "Convenience wrapper around `core/grow-tree`, for use by other functions in the gui namespace."
-  []
-  (let [fns (->> @*state :project :sound-changes (filter :active?) (map :item))
-        val (-> @*state :selection first)]
-    (core/grow-tree fns val)))
-
-; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-leaves ------------------------------------------------------------------------------- {{{ -
 
 ;; <a id="gui/print-leaves"></a>
 
+(defn- format-leaves
+  "Format leaves for printing: highlight match with target and add commas."
+  [output]
+  (let [target (-> @*state :selection second :display)]
+    (->> output
+         :output
+         (map :display)
+         (map #(if (= % target)
+                 (str "<span style='color:limegreen'>" % "</span>")
+                 %))
+         (string/join ", "))))
+
 (defn- print-leaves
   "Wrapper around `core/print-leaves`."
   [_]
-  (let [functions   (->> @*state :project :sound-changes (filter :active?) (map :item))
+  (let [functions   (get-active-functions)
         counter     (atom 0)
         output-ch   (async/chan 12)]  ; 12 is just to make sure nothing has to wait
     ; listen for output
@@ -543,14 +615,13 @@
           :completed (do
                        (swap! *state assoc :dialog nil)     ; close the dialog
                        (swap! *state assoc-in [:output :text]
-                              (str (-> @*state :selection first :display) " ≫ "
-                                   (->> output :output (map :display) (string/join ", ")))))
+                              (str (-> @*state :selection first :display) " ≫ " (format-leaves output))))
           :progress  (do
                        (swap! counter inc)
                        (swap! *state assoc-in [:dialog :progress]
                               (/ @counter (count functions)))
                        (recur))
-          (throw (ex-info (str "An error in print-paths that shouldn't have happened. `output`=" output) {}))))) 
+          (throw (ex-info (str "An error in print-leaves that shouldn't have happened. `output`=" output) {}))))) 
     ; run `core/find-paths
     (async/go
       (message :progress)                                     ; open dialog
@@ -592,7 +663,7 @@
                               (string/join " > " (:output output)) "<br>")
                        (recur))
           (throw (ex-info (str "An error in print-paths that shouldn't have happened. `output`=" output) {}))))) 
-    ; run `core/find-paths
+    ; run `core/find-paths`
     (async/go
       (message :progress)                                       ; open dialog
       (swap! *state assoc :output {:text "", :tooltip ""})      ; wipe `output-view`
@@ -613,7 +684,7 @@
   [counts]
   (let [linebreak "%26%2310%3B"]  ; (java.net.URLEncoder/encode "&#10;")
     (str "A tree from \"" (-> @*state :selection :source-data :display) "\" through" linebreak
-         "  " (->> @*state :project :sound-changes (filter :active?) count) " sound changes, with" linebreak
+         "  " (count (get-active-functions)) " sound changes, with" linebreak
          "  " (format "%,d" (:nodes counts)) " nodes and" linebreak
          "  " (format "%,d" (:leaves counts)) " leaves.")))
 
@@ -664,7 +735,7 @@
 ;; <a id="gui/print-tree-paths"></a>
 
 (defn- print-tree-paths
-  "Wrapper around `core/grow-tree` and then `core/find-paths` and `core/print-tree`."
+  "Wrapper around `core/grow-tree`, and then `core/find-paths` and `core/print-tree`."
   [_]
   (let [path (core/find-paths (grow-tree)
                               (-> @*state :paths-view :pattern re-pattern)
@@ -686,6 +757,7 @@
     (case (:event/type event)
 
       ; wrappers (must be here so errors are caught)
+      ::find-irregulars (find-irregulars nil)
       ::load-project (load-project event nil)
       ::print-leaves (print-leaves nil)
       ::print-paths (print-paths nil)

@@ -7,7 +7,7 @@
 - GUI
 
 ### Changed
-- API of: core/find-paths, core/print-tree (also formatting changed)
+- a near-complete rewrite
 
 ### Removed
 - CLI

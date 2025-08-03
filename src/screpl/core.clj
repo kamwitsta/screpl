@@ -5,8 +5,8 @@
 ;; 1. [General utility](#core/general)
 ;; 2. [Data specs](#core/specs)
 ;; 3. [Data upload](#core/data)
-;; 4. [Tree operations](#core/tree)
-;; 5. [Source : target](#core/target)
+;; 4. [Single item operations](#core/single)
+;; 5. [Batch operations](#core/batch)
 
 ; ^:export's don't really do anything in this case, they're just documentation
 
@@ -375,10 +375,10 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================== }}} =
-; = tree operations ============================================================================ {{{ =
+; = single ===================================================================================== {{{ =
 
-;; <a id="core/tree"></a>
-;; ## Build and print trees
+;; <a id="core/single"></a>
+;; ## Operations on individual items
 
 ;; - [grow-tree](#core/grow-tree)
 ;; - [find-paths](#core/find-paths)
@@ -473,7 +473,7 @@
                 (do
                   (report! :progress)
                   (mapcat f x))))]
-      (report! :completed (reduce pipeline value functions)))))
+      (report! :completed (set (reduce pipeline value functions))))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-tree --------------------------------------------------------------------------------- {{{ -
@@ -530,69 +530,37 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================== }}} =
-; = source : target ============================================================================ {{{ =
+; = batch ====================================================================================== {{{ =
 
-;; <a id="core/target"></a>
-;; ## Relations between source and target data
-
-;; Functions that do not care about the nodes, only about the leaves. It is faster to generate just the leaves than to extract them from a [core/Tree](#core/tree).
+;; <a id="core/batch"></a>
+;; ## Operations on multiple items
 
 ;; - [find-irregulars](#core/find-irregulars)
-;; - [produces-target?](#core/produces-target?)
 
-; - produces-target? --------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/produces-target?"></a>
-
-(defn ^:export produces-target?
-  "Applies a series of `functions` to the `source` hash map and checks whether any of the results is equal to `target` on selected `keys`."
-  [functions    ; through these functions
-   source       ; pipeline this
-   target       ; and check if any equal to this
-   keys         ; on these keys
-   progressbar] ; while using this to show progress
-  (let [progress! (when progressbar (progressbar "leaves" 1000))
-        ; generate final results (lazy)
-        leaves    (reduce (fn [x f] (mapcat f x))
-                          [source]
-                          functions)
-        ; check if any is equal to target
-        result    (loop [leaf leaves]
-                    (if (empty? leaf)
-                      false
-                      (do
-                        (when progressbar (progress!))
-                        (if (map-equal? (first leaf) target keys)
-                          true
-                          (recur (next leaf))))))]
-    (true? result)))
-
-; ---------------------------------------------------------------------------------------------- }}} -
 ; - find-irregulars ---------------------------------------------------------------------------- {{{ -
 
 ;; <a id="core/find-irregulars"></a>
 
 (defn ^:export find-irregulars
-  "Find items in `source` that do not produce their corresponding items in `target`."
-  [functions     ; apply these functions
-   source        ; to these data
-   target        ; and compare with these data
-   keys          ; on these keys
-   progressbar]  ; while using this to show the progress
-  (let [progress! (progressbar (count source))
-        ; find item in target that has the same :id as the current source item
-        ; (source and target aren’t necessarily in the same order)
-        find-trg  (fn [src]
-                    (loop [trg target]
-                      (if (= (:id src) (:id (first trg)))
-                        (first trg)
-                        (recur (next trg)))))]
-    (->> source
-         (pmap-daemon (fn [src]
-                        (progress!)
-                        (when-not (produces-target? functions src (find-trg src) keys nil)
-                          src)))
-         (keep identity))))     ; (filter some?) could realize the entire sequence
+  "Batch pipelines values through a list of functions, and reports those items that do not produce the expected result. `data` is a vector of vectors, each containing a source map and a target map."
+  [functions
+   data
+   cancel-ch
+   output-ch]
+  (let [report! (make-reporter output-ch)]
+    (letfn [(check-item [item]
+              (if (some? (async/poll! cancel-ch))
+                (report! :cancelled)
+                (let [leaves   (reduce (fn [x f] (mapcat f x))    ; do the pipeline
+                                       [(first item)]
+                                       functions)
+                      result   (set (map :display leaves))
+                      expected (-> item second :display)]
+                  (report! :progress)
+                  (when (not-any? result [expected])
+                    (report! :partial {:item item, :result result})))))]
+      (dorun (pmap check-item data))
+      (report! :completed))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
