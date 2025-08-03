@@ -35,29 +35,29 @@
 (def progress-step 1000)
 
 (def ^:dynamic *state
-  "Global variable, holds the state for the GUI."
-  (atom {; dialog window for errors and progress reporting
-         :dialog nil
-         ; filtering data in `data-view`
-         :filter-pattern ""
-         ; `output-view`
-         :output {:text ""
-                  :tooltip "No results yet."}
-         ; `paths-view` window
-         :paths-view {:pattern ""
-                      :intermediate true
-                      :showing false}
-         ; the loaded project
-         :project {:filename nil
-                   :data []
-                   :data-filtered []
-                   :sound-changes []
-                   :has-target-data? false}
-         ; selected item in `data-view` (handled by `event-handler`
-         :selection nil 
-         ; size of the main window
-         :window {:height (* column-width 4)
-                  :width (* column-width 2)}}))
+ "Global variable, holds the state for the GUI."
+ (atom {; dialog window for errors and progress reporting
+        :dialog nil
+        ; filtering data in `data-view`
+        :filter-pattern ""
+        ; `output-view`
+        :output {:text ""
+                 :tooltip "No results yet."}
+        ; `paths-view` window
+        :paths-view {:pattern ""
+                     :intermediate true
+                     :showing false}
+        ; the loaded project
+        :project {:filename nil
+                  :data []
+                  :data-filtered []
+                  :sound-changes []
+                  :has-target-data? false}
+        ; selected item in `data-view` (handled by `event-handler`
+        :selection nil 
+        ; size of the main window
+        :window {:height (* column-width 4)
+                 :width (* column-width 2)}}))
 
 ; ============================================================================================== }}} =
 ; = general ==================================================================================== {{{ =
@@ -448,9 +448,9 @@
                                           :alignment :center-right
                                           :spacing 6
                                           :children [{:fx/type :button
-                                                      :text "Print in tree"}
-                                                     :disable (-> state :selection empty?)
-                                                      :on-action {:event/type ::print-tree-paths}
+                                                      :text "Print in tree"
+                                                      :disable (-> state :selection empty?)
+                                                      :on-action {:event/type ::print-tree-paths}}
                                                      {:fx/type :button
                                                       :text "Print paths"
                                                       :disable (-> state :selection empty?)
@@ -593,8 +593,8 @@
   [event
    filename]     ; open dialog if nil
   ; get the filename, from the event handler, or from a dialog
-  (let [; fname   (or filename (chooser-dialog event))
-        fname   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
+  (let [fname   (or filename (chooser-dialog event))
+        ; fname   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
         project (core/load-project fname)]
     ; change the width of the window to accomodate target data
     ; both height and width must be given, and
@@ -928,11 +928,9 @@
   "Stop the GUI."
   [_]
   (async/close! cancel-ch)
-  (fx/unmount-renderer *state renderer))
-  ; (System/exit 0))
+  (fx/unmount-renderer *state renderer)
+  (System/exit 0))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================== }}} =
-
-(start-gui)
