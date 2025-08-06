@@ -14,7 +14,12 @@
                  [cljfx "1.9.5"]
                  [io.github.cljfx/dev "1.0.39"]
                  [org.clojure/core.async "1.8.741"]
-                 [com.github.mifmif/generex "1.0.2"]]
+                 [com.github.mifmif/generex "1.0.2"]
+                 [org.openjfx/javafx-web "17.0.2" :classifier "win"]
+                 [org.openjfx/javafx-controls "17.0.2" :classifier "win"]
+                 [org.openjfx/javafx-fxml "17.0.2" :classifier "win"]
+                 [org.openjfx/javafx-base "17.0.2" :classifier "win"]
+                 [org.openjfx/javafx-graphics "17.0.2" :classifier "win"]]
   :main ^:skip-aot screpl.main
   :target-path "target/%s"
   :profiles {:dev {:dependencies [[nrepl "1.3.1"]
