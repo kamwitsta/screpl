@@ -904,10 +904,10 @@
   (fx/create-renderer
     :middleware (fx/wrap-map-desc root-view)
     ; improved errors; see https://github.com/cljfx/dev
-    :error-handler (bound-fn [^Throwable ex] (.printStackTrace ^Throwable ex *err*))
-    :opts {:fx.opt/map-event-handler event-handler 
+    ; :error-handler (bound-fn [^Throwable ex] (.printStackTrace ^Throwable ex *err*))
+    :opts {:fx.opt/map-event-handler event-handler})) 
            ; improved errors; see https://github.com/cljfx/dev
-           :fx.opt/type->lifecycle @(requiring-resolve 'cljfx.dev/type->lifecycle)}))
+           ; :fx.opt/type->lifecycle @(requiring-resolve 'cljfx.dev/type->lifecycle)}))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - start-gui ---------------------------------------------------------------------------------- {{{ -
