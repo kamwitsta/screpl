@@ -36,7 +36,13 @@
 
 (def ^:dynamic *state
  "Global variable, holds the state for the GUI."
- (atom {; dialog window for errors and progress reporting
+ (atom {; references to accordions
+        :accordion {:data nil
+                    :sound-changes nil}
+        ; ad hoc tabs
+        :ad-hoc {:data ""
+                 :sound-changes ""}
+        ; dialog window for errors and progress reporting
         :dialog nil
         ; filtering data in `data-view`
         :filter-pattern ""
@@ -68,7 +74,11 @@
 (defn- get-active-functions
   "Gets active sound change functions from *state."
   []
-  (->> @*state :project :sound-changes (filter :active?) (map :item)))
+  (let [curr-pane (-> @*state :accordion :sound-changes .getExpandedPane .getText)]
+    (case curr-pane
+      "Ad hoc"  
+      "Project" (->> @*state :project :sound-changes (filter :active?) (map :item))
+      (throw (ex-info (str "An error in get-active-functions that shouldn't have happened. `curr-pane`=" curr-pane) {})))))
 
 (defn- sample-strings
   "Generate strings that match a pattern (given as a String)."
@@ -109,6 +119,16 @@
 
 ;; <a id="gui/data-view"></a>
 
+; - accordion-created  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
+
+(defn- accordion-created
+  "Cljfx does not export pane-expansion props for :accordion. This function saves a reference to an :accordion so that Java interop can be later used to check which pane is currently expanded, and also opens the first pane as by default all panes are closed on startup."
+  [event    ; on-create event = the accordion
+   type]    ; :data or :sound-changes
+  (swap! *state assoc-in [:accordion type] event)
+  (-> event (.setExpandedPane (-> event .getPanes first))))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 ; - data-columns - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ -
 
 (defn- data-columns
@@ -148,6 +168,17 @@
                        (-> @*state :project :has-target-data?)
                        (str "\nTarget:\n"
                             (->> item second (map get-kvs) (apply str))))}}))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
+; - pane-click-handler - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ -
+
+(defn- pane-click-handler
+  "Makes sure one pane in an accordion is always open."
+  [event]
+  (let [source (-> event .getSource)
+        parent (-> event .getSource .getParent)]
+    (when (-> parent .getExpandedPane nil?)
+      (-> parent (.setExpandedPane source)))))
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 ; - scs-item-view - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
@@ -216,15 +247,29 @@
     {:fx/type :split-pane
      :divider-positions (if has-target-data? [0.333 0.666] [0.5])
      :items [; sound changes
-             {:fx/type :scroll-pane
-              :content {:fx/type :v-box
-                        :children (map-indexed scs-item-view (-> state :project :sound-changes))}
-              :pref-width column-width}
+             {:fx/type fx/ext-on-instance-lifecycle
+              :on-created #(accordion-created % :sound-changes)
+              :pref-width column-width
+              :desc {:fx/type :accordion
+                     :panes [{:fx/type :titled-pane
+                              :text "Project"
+                              :content {:fx/type :scroll-pane
+                                        :content {:fx/type :v-box
+                                                  :children (map-indexed scs-item-view (-> state :project :sound-changes))}}
+                              :on-mouse-clicked pane-click-handler}
+                             {:fx/type :titled-pane
+                              :text "Ad hoc"
+                              :content {:fx/type :v-box
+                                        :children [{:fx/type :text-area
+                                                    :prompt-text "Write a sound change function here…"
+                                                    :text (-> state :ad-hoc :sound-changes)
+                                                    :v-box/vgrow :always}]}
+                              :on-mouse-clicked pane-click-handler}]}}
              ; data
              {:fx/type :v-box
               :children [{:fx/type :h-box
                           :children [{:fx/type :text-field
-                                      :prompt-text "Filter using regular expressions"
+                                      :prompt-text "Filter data using regular expressions…"
                                       :text (-> state :filter-pattern)
                                       :h-box/hgrow :always
                                       :on-key-pressed {:event/type ::filter-key-pressed}
@@ -593,8 +638,9 @@
   [event
    filename]     ; open dialog if nil
   ; get the filename, from the event handler, or from a dialog
-  (let [fname   (or filename (chooser-dialog event))
-        ; fname   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
+  (let [
+        ; fname   (or filename (chooser-dialog event))
+        fname   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
         project (core/load-project fname)]
     ; change the width of the window to accomodate target data
     ; both height and width must be given, and
@@ -904,10 +950,10 @@
   (fx/create-renderer
     :middleware (fx/wrap-map-desc root-view)
     ; improved errors; see https://github.com/cljfx/dev
-    ; :error-handler (bound-fn [^Throwable ex] (.printStackTrace ^Throwable ex *err*))
-    :opts {:fx.opt/map-event-handler event-handler})) 
+    :error-handler (bound-fn [^Throwable ex] (.printStackTrace ^Throwable ex *err*))
+    :opts {:fx.opt/map-event-handler event-handler 
            ; improved errors; see https://github.com/cljfx/dev
-           ; :fx.opt/type->lifecycle @(requiring-resolve 'cljfx.dev/type->lifecycle)}))
+           :fx.opt/type->lifecycle @(requiring-resolve 'cljfx.dev/type->lifecycle)}))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - start-gui ---------------------------------------------------------------------------------- {{{ -
@@ -928,9 +974,11 @@
   "Stop the GUI."
   [_]
   (async/close! cancel-ch)
-  (fx/unmount-renderer *state renderer)
-  (System/exit 0))
+  (fx/unmount-renderer *state renderer))
+  ; (System/exit 0))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================== }}} =
+
+(start-gui)
