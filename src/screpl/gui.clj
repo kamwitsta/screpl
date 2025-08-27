@@ -76,7 +76,7 @@
   []
   (let [curr-pane (-> @*state :accordion :sound-changes .getExpandedPane .getText)]
     (case curr-pane
-      "Ad hoc"  
+      "Ad hoc"  (core/load-fns (-> @*state :ad-hoc :sound-changes))
       "Project" (->> @*state :project :sound-changes (filter :active?) (map :item))
       (throw (ex-info (str "An error in get-active-functions that shouldn't have happened. `curr-pane`=" curr-pane) {})))))
 
@@ -262,7 +262,8 @@
                               :content {:fx/type :v-box
                                         :children [{:fx/type :text-area
                                                     :prompt-text "Write a sound change function here…"
-                                                    :text (-> state :ad-hoc :sound-changes)
+                                                    ; there is a :text prop but it i don't seem to be able to bind it to state, so :on-text-changed instead
+                                                    :on-text-changed {:event/type ::ad-hoc-sc-key-pressed}
                                                     :v-box/vgrow :always}]}
                               :on-mouse-clicked pane-click-handler}]}}
              ; data
@@ -515,7 +516,7 @@
    :root {:fx/type :v-box
           :children [(menu-view state)
                      {:fx/type :split-pane
-                      ; ↓ forces the recreation of the layout after the data (and in consequence, window size) changes
+                      ; ↓ forces the recreation of the layout after the data change (and in consequence, window size)
                       :fx/key (some? (-> state :project :has-target-data?))
                       :divider-positions [0.5]
                       :orientation :vertical
@@ -850,6 +851,9 @@
       ::print-tree (print-tree nil #{})
       ::print-tree-paths (print-tree-paths nil)
       ::reload-project (load-project event (-> @*state :project :filename))
+
+      ; ad-hoc
+      ::ad-hoc-sc-key-pressed (swap! *state assoc-in [:ad-hoc :sound-changes] (:fx/event event))
 
       ; filtering
       ::change-filter-pattern (swap! *state assoc :filter-pattern (:fx/event event))

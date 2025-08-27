@@ -208,11 +208,13 @@
 ;; <a id="core/data"></a>
 ;; ## Loading users’ code and data
 
-;; The only function that is exposed via the UI is [load-project](#core/load-project), which calls all the other functions. The reason for this is this: 1) the `:id` key is only required from source data when target data are also present, and can be omitted otherwise; 2) the ID’s in source data must match the ID’s in target data. Validating the former and ensuring the latter can only be done when all the data are loaded together in one go.
+;; The only function that is directly exposed via the UI is [load-project](#core/load-project), which calls all the other functions. The reason for this is this: 1) the `:id` key is only required from source data when target data are also present, and can be omitted otherwise; 2) the ID’s in source data must match the ID’s in target data. Validating the former and ensuring the latter can only be done when all the data are loaded together in one go.
+;; Indirectly, the UI also calls [load-fns](#core/load-fns); this is why it's been separated from [load-scs](#core/load-scs).
 
 ;; - [load-project](#core/load-project)
 ;; - [load-projectfile](#core/load-projectfile)
 ;; - [load-data](#core/load-data)
+;; - [load-fns](#core/load-fns)
 ;; - [load-scs](#core/load-scs)
 ;; - [check-ids](#core/check-ids)
 
@@ -303,17 +305,14 @@
       (pair-maker data))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
-; - load-scs ----------------------------------------------------------------------------------- {{{ -
+; - load-fns ----------------------------------------------------------------------------------- {{{ -
 
-;; <a id="core/load-scs"></a>
+;; <a id="core/load-fns"></a>
 
-(defn load-scs
-  "Reads, evals, and validates sound changes. Returns a vector of functions."
-  [project]     ; get scs from this
-  (->> project
-      :sound-changes
-      (attach-to-path (:project-file project))
-      (slurp)
+(defn load-fns
+  "Evals and validates sound changes. Returns a vector of functions."
+  [string]  ; eval this
+  (->> string
       (sci/eval-string)
       (map-indexed (fn [idx itm]
                      (try
@@ -324,6 +323,20 @@
                                            {:display (-> itm meta :name)
                                             :index   (inc idx)})))))))
       (doall)))
+
+; ---------------------------------------------------------------------------------------------- }}} -
+; - load-scs ----------------------------------------------------------------------------------- {{{ -
+
+;; <a id="core/load-scs"></a>
+
+(defn load-scs
+  "Reads sound changes and sends them for evaluation and validation. Returns a vector of functions."
+  [project]     ; get scs from this
+  (->> project
+      :sound-changes
+      (attach-to-path (:project-file project))
+      (slurp)
+      (load-fns)))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - load-projectfile --------------------------------------------------------------------------- {{{ -
