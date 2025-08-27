@@ -71,6 +71,15 @@
 ;; <a id="gui/general"></a>
 ;; ## General utility functions
 
+(defn- get-active-data
+  "Gets active source data from *state."
+  []
+  (let [curr-pane (-> @*state :accordion :data .getExpandedPane .getText)]
+    (case curr-pane
+      "Ad hoc"  (core/load-fns (-> @*state :ad-hoc :data))
+      "Project" (:selection @*state)
+      (throw (ex-info (str "An error in get-active-data that shouldn't have happened. `curr-pane`=" curr-pane) {})))))
+
 (defn- get-active-functions
   "Gets active sound change functions from *state."
   []
@@ -247,8 +256,9 @@
     {:fx/type :split-pane
      :divider-positions (if has-target-data? [0.333 0.666] [0.5])
      :items [; sound changes
-             {:fx/type fx/ext-on-instance-lifecycle
+             {:fx/type fx/ext-on-instance-lifecycle   ; provides :on-created
               :on-created #(accordion-created % :sound-changes)
+              :padding 0
               :pref-width column-width
               :desc {:fx/type :accordion
                      :panes [{:fx/type :titled-pane
@@ -259,38 +269,51 @@
                               :on-mouse-clicked pane-click-handler}
                              {:fx/type :titled-pane
                               :text "Ad hoc"
-                              :content {:fx/type :v-box
-                                        :children [{:fx/type :text-area
-                                                    :prompt-text "Write a sound change function here…"
-                                                    ; there is a :text prop but it i don't seem to be able to bind it to state, so :on-text-changed instead
-                                                    :on-text-changed {:event/type ::ad-hoc-sc-key-pressed}
-                                                    :v-box/vgrow :always}]}
+                              :content {:fx/type :text-area
+                                        :prompt-text "Write sound change function/s here…"
+                                        ; there is a :text prop but it i don't seem to be able to bind it to state, so :on-text-changed instead
+                                        :on-text-changed {:event/type ::ad-hoc-sc-key-pressed}}
                               :on-mouse-clicked pane-click-handler}]}}
              ; data
-             {:fx/type :v-box
-              :children [{:fx/type :h-box
-                          :children [{:fx/type :text-field
-                                      :prompt-text "Filter data using regular expressions…"
-                                      :text (-> state :filter-pattern)
-                                      :h-box/hgrow :always
-                                      :on-key-pressed {:event/type ::filter-key-pressed}
-                                      :on-text-changed {:event/type ::change-filter-pattern}
-                                      :tooltip {:fx/type :tooltip
-                                                :show-delay [333 :ms]
-                                                :text (-> state :filter-pattern sample-strings)}}
-                                     {:fx/type :button
-                                      :text "Filter"
-                                      :disable (-> @*state :project :filename nil?)
-                                      :on-action {:event/type ::filter-data}}]}
-                         {:fx/type :table-view
-                          :column-resize-policy :constrained  ; don't show an extra column
-                          :columns (data-columns has-target-data?)
-                          :items (-> state :project :data-filtered)
-                          :on-selected-item-changed {:event/type ::select-datum}
-                          :pref-width (* column-width (if has-target-data? 2.25 1))
-                          :row-factory {:fx/cell-type :table-row
-                                        :describe data-tooltip}
-                          :selection-mode :single}]}]}))
+             {:fx/type fx/ext-on-instance-lifecycle   ; provides :on-created
+              :on-created #(accordion-created % :data)
+              :pref-width column-width
+              :desc {:fx/type :accordion
+                     :panes [{:fx/type :titled-pane
+                              :text "Project"
+                              :on-mouse-clicked pane-click-handler
+                              :content {:fx/type :v-box
+                                        :padding 0
+                                        :children [{:fx/type :h-box
+                                                    :children [{:fx/type :text-field
+                                                                :prompt-text "Filter data using regular expressions…"
+                                                                :text (-> state :filter-pattern)
+                                                                :h-box/hgrow :always
+                                                                :on-key-pressed {:event/type ::filter-key-pressed}
+                                                                :on-text-changed {:event/type ::change-filter-pattern}
+                                                                :tooltip {:fx/type :tooltip
+                                                                          :show-delay [333 :ms]
+                                                                          :text (-> state :filter-pattern sample-strings)}}
+                                                               {:fx/type :button
+                                                                :text "Filter"
+                                                                :disable (-> @*state :project :filename nil?)
+                                                                :on-action {:event/type ::filter-data}}]}
+                                                   {:fx/type :table-view
+                                                    :column-resize-policy :constrained  ; don't show an extra column
+                                                    :columns (data-columns has-target-data?)
+                                                    :items (-> state :project :data-filtered)
+                                                    :on-selected-item-changed {:event/type ::select-datum}
+                                                    :pref-width (* column-width (if has-target-data? 2.25 1))
+                                                    :row-factory {:fx/cell-type :table-row
+                                                                  :describe data-tooltip}
+                                                    :selection-mode :single}]}}
+                             {:fx/type :titled-pane
+                              :text "Ad hoc"
+                              :content {:fx/type :text-area
+                                        :prompt-text "Write a source datum here…"
+                                        ; there is a :text prop but it i don't seem to be able to bind it to state, so :on-text-changed instead
+                                        :on-text-changed {:event/type ::ad-hoc-data-key-pressed}}
+                              :on-mouse-clicked pane-click-handler}]}}]}))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - dialog ------------------------------------------------------------------------------------- {{{ -
@@ -853,6 +876,7 @@
       ::reload-project (load-project event (-> @*state :project :filename))
 
       ; ad-hoc
+      ::ad-hoc-data-key-pressed (swap! *state assoc-in [:ad-hoc :data] (:fx/event event))
       ::ad-hoc-sc-key-pressed (swap! *state assoc-in [:ad-hoc :sound-changes] (:fx/event event))
 
       ; filtering
