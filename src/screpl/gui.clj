@@ -22,7 +22,7 @@
 ;; <a id="gui/globals"></a>
 ;; ## Global variables
 
-(declare filter-data load-project message print-paths print-tree stop-gui unescape-unicode)
+(declare filter-data load-project message print-paths print-tree stop-gui surround-string unescape-unicode)
 
 ;; Used to pass `:cancel` messages to `core` functions.
 (def cancel-ch (async/chan))
@@ -71,23 +71,32 @@
 ;; <a id="gui/general"></a>
 ;; ## General utility functions
 
+(defn- get-active-pane
+  "Checks which pane is currently open in an accordion."
+  [box]
+  ; when .getExpandedPane or .getText fail, they don't just return nil, they throw an error
+  (try
+    (-> @*state :accordion box .getExpandedPane .getText)
+    (catch Exception _ nil)))
+
+
 (defn- get-active-data
   "Gets active source data from *state."
   []
-  (let [curr-pane (-> @*state :accordion :data .getExpandedPane .getText)]
-    (case curr-pane
-      "Ad hoc"  (core/load-data (-> @*state :ad-hoc :data))
-      "Project" (:selection @*state)
-      (throw (ex-info (str "An error in get-active-data that shouldn't have happened. `curr-pane`=" curr-pane) {})))))
+  (case (get-active-pane :data)
+    "Ad hoc"  (-> @*state :ad-hoc :data (surround-string "[" "]") core/load-data first)
+    "Project" (:selection @*state)
+    nil))
+
 
 (defn- get-active-functions
   "Gets active sound change functions from *state."
   []
-  (let [curr-pane (-> @*state :accordion :sound-changes .getExpandedPane .getText)]
-    (case curr-pane
-      "Ad hoc"  (core/load-scs (-> @*state :ad-hoc :sound-changes))
-      "Project" (->> @*state :project :sound-changes (filter :active?) (map :item))
-      (throw (ex-info (str "An error in get-active-functions that shouldn't have happened. `curr-pane`=" curr-pane) {})))))
+  (case (get-active-pane :sound-changes)
+    "Ad hoc"  (-> @*state :ad-hoc :sound-changes core/load-scs)
+    "Project" (->> @*state :project :sound-changes (filter :active?) (map :item))
+    nil))
+
 
 (defn- sample-strings
   "Generate strings that match a pattern (given as a String)."
@@ -101,7 +110,14 @@
              (string/join "\n  "))))
     (catch Exception e "invalid regular expression")))
 
-(defn unescape-unicode
+
+(defn- surround-string
+  "Adds a prefix and a suffix to a string"
+  [s prefix suffix]
+  (str prefix s suffix))
+
+
+(defn- unescape-unicode
   "Convert Unicode escape sequence to actual character."
   ; Generex can't do it on its own.
   [s]
@@ -396,12 +412,17 @@
                     {:fx/type :menu-item
                      :text "Print leaves"
                      :accelerator [:shortcut :l]
-                     :disable (-> @*state :selection nil?)
+                     :disable (let [data (get-active-data)
+                                    scs (get-active-functions)]
+                                (println "data:" data)
+                                (println "scs:" scs)
+                                (println "and data scs:" (and data scs))
+                                (nil? (and data scs)))
                      :on-action {:event/type ::print-leaves}}
                     {:fx/type :menu-item
                      :text "Print tree"
                      :accelerator [:shortcut :t]
-                     :disable (-> @*state :selection nil?)
+                     ; :disable (and (get-active-data) (get-active-functions))
                      :on-action {:event/type ::print-tree}}]}
            {:fx/type :menu
             :text "Batch"
@@ -518,11 +539,11 @@
                                           :spacing 6
                                           :children [{:fx/type :button
                                                       :text "Print in tree"
-                                                      :disable (-> state :selection empty?)
+                                                      ; :disable (and (get-active-data) (get-active-functions))
                                                       :on-action {:event/type ::print-tree-paths}}
                                                      {:fx/type :button
                                                       :text "Print paths"
-                                                      :disable (-> state :selection empty?)
+                                                      ; :disable (and (get-active-data) (get-active-functions))
                                                       :on-action {:event/type ::print-paths}}]}]}]}}
    :showing (-> state :paths-view :showing)
    :title "Paths"})
@@ -663,8 +684,8 @@
    filename]     ; open dialog if nil
   ; get the filename, from the event handler, or from a dialog
   (let [
-        fname   (or filename (chooser-dialog event))
-        ; fname   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
+        ; fname   (or filename (chooser-dialog event))
+        fname   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
         project (core/load-project fname)]
     ; change the width of the window to accomodate target data
     ; both height and width must be given, and
@@ -679,8 +700,8 @@
                             :item itm))
                 (:sound-changes project))
           new-project (assoc project
-                             :sound-changes scs
-                             :data-filtered (:data project))]
+                             :data-filtered (:data project)
+                             :sound-changes scs)]
       (swap! *state assoc :project new-project))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -692,8 +713,9 @@
 
 (defn- format-leaves
   "Format leaves for printing: highlight match with target and add commas."
-  [output]
-  (let [target (-> (get-active-data) second :display)]
+  [data
+   output]
+  (let [target (-> data second :display)]
     (->> output
          :output
          (map :display)
@@ -704,10 +726,11 @@
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 
-(defn- print-leaves
+(defn print-leaves
   "Wrapper around `core/print-leaves`."
   [_]
-  (let [functions   (get-active-functions)
+  (let [data        (get-active-data)
+        functions   (get-active-functions)
         counter     (atom 0)
         output-ch   (async/chan 12)]  ; 12 is just to make sure nothing has to wait
     ; listen for output
@@ -721,7 +744,7 @@
           :completed (do
                        (swap! *state assoc :dialog nil)     ; close the dialog
                        (swap! *state assoc-in [:output :text]
-                              (str (-> (get-active-data) first :display) " ≫ " (format-leaves output))))
+                              (str (-> data first :display) " ≫ " (format-leaves data output))))
           :progress  (do
                        (swap! counter inc)
                        (swap! *state assoc-in [:dialog :progress]
@@ -733,9 +756,9 @@
       (message :progress)                                     ; open dialog
       (swap! *state assoc :output {:text "", :tooltip ""})    ; wipe `output-view`
       (core/print-leaves functions                            ; actually run the thing
-                         (-> (get-active-data) first vector)
+                         data 
                          cancel-ch
-                         output-ch) 
+                         output-ch)
       (async/close! output-ch))))                             ; clean up
 
 ; ---------------------------------------------------------------------------------------------- }}} -

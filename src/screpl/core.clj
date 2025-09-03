@@ -292,7 +292,7 @@
 
     (let [data (cond
                  ; when x is a string (gui ad-hoc)
-                 (string? x) x
+                 (string? x) {:source-data (edn/read-string x)}
                  ; when x is a project that gets data from a db
                  (:get-data-fn x) ((:get-data-fn x))
                  ; when x is a project that gets data from files
@@ -303,6 +303,7 @@
       (when (:target-data data)
         (doall (map-indexed (partial validator TargetDatum) (:target-data data)))
         (check-ids data))
+      (println (pair-maker data))
       (pair-maker data))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
