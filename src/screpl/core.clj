@@ -209,12 +209,11 @@
 ;; ## Loading users’ code and data
 
 ;; The only function that is directly exposed via the UI is [load-project](#core/load-project), which calls all the other functions. The reason for this is this: 1) the `:id` key is only required from source data when target data are also present, and can be omitted otherwise; 2) the ID’s in source data must match the ID’s in target data. Validating the former and ensuring the latter can only be done when all the data are loaded together in one go.
-;; Indirectly, the UI also calls [load-fns](#core/load-fns); this is why it's been separated from [load-scs](#core/load-scs).
+;; Indirectly, the UI also calls [load-data](#core/load-data) and [load-scs](#core/load-scs).
 
 ;; - [load-project](#core/load-project)
 ;; - [load-projectfile](#core/load-projectfile)
 ;; - [load-data](#core/load-data)
-;; - [load-fns](#core/load-fns)
 ;; - [load-scs](#core/load-scs)
 ;; - [check-ids](#core/check-ids)
 
@@ -261,15 +260,15 @@
 ;; <a id="core/load-data"></a>
 
 (defn load-data
-  "Reads and validates source and target data. Returns a hash map with `:source-data` and `target-data`."
-  [project]
+  "Evaluates and validates data. Accepts a project (a map; when called by `core/load-project`) or a string (when called by `gui/get-active-data`). Returns a hash map with `:source-data` and `target-data`."
+  [x]
   (letfn
-    [(loader [key]
+    [(loader [project key]
       (->> project
            key
            (attach-to-path (:project-file project))
-           (slurp)
-           (edn/read-string)))
+           slurp
+           edn/read-string))
 
      ; {:source-data [s]} -> [[s] [s] …]
      ; {:source-data [s], :target-data [t]} -> [[s t] [s t] …]
@@ -291,13 +290,15 @@
                                :index (inc idx)
                                :filename (if (= spec SourceDatum) "source data" "target data")}))))))]
 
-    (let [data (if (:get-data-fn project)
-                 ; load from a database
-                 ((:get-data-fn project))
-                 ; load from files
-                 (cond-> {:source-data (loader :source-data)}
-                   (:target-data project)
-                   (assoc :target-data (loader :target-data))))]
+    (let [data (cond
+                 ; when x is a string (gui ad-hoc)
+                 (string? x) x
+                 ; when x is a project that gets data from a db
+                 (:get-data-fn x) ((:get-data-fn x))
+                 ; when x is a project that gets data from files
+                 :else (cond-> {:source-data (loader x :source-data)}
+                          (:target-data x)
+                          (assoc :target-data (loader x :target-data))))]
       (doall (map-indexed (partial validator SourceDatum) (:source-data data)))
       (when (:target-data data)
         (doall (map-indexed (partial validator TargetDatum) (:target-data data)))
@@ -305,38 +306,32 @@
       (pair-maker data))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
-; - load-fns ----------------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/load-fns"></a>
-
-(defn load-fns
-  "Evals and validates sound changes. Returns a vector of functions."
-  [string]  ; eval this
-  (->> string
-      (sci/eval-string)
-      (map-indexed (fn [idx itm]
-                     (try
-                       (m/assert SCItem itm)
-                       (catch Exception e
-                         (let [data (-> e ex-data :data :explain)]
-                           (throw (ex-info (-> data me/humanize str)
-                                           {:display (-> itm meta :name)
-                                            :index   (inc idx)})))))))
-      (doall)))   ; because map
-
-; ---------------------------------------------------------------------------------------------- }}} -
 ; - load-scs ----------------------------------------------------------------------------------- {{{ -
 
 ;; <a id="core/load-scs"></a>
 
 (defn load-scs
-  "Reads sound changes and sends them for evaluation and validation. Returns a vector of functions."
-  [project]     ; get scs from this
-  (->> project
-      :sound-changes
-      (attach-to-path (:project-file project))
-      (slurp)
-      (load-fns)))
+  "Evaluates and validates sound change functions. Accepts a project (a map; when called by `core/load-project`) or a string (when called by `gui/get-active-functions`). Returns a vector of functions."
+  [x]
+  (letfn [(to-string [x]
+            (if (string? x)
+              x
+              (->> x
+                   :sound-changes
+                   (attach-to-path (:project-file x))
+                   slurp)))]
+    (->> x
+         to-string
+         sci/eval-string
+         (map-indexed (fn [idx itm]
+                        (try
+                          (m/assert SCItem itm)
+                          (catch Exception e
+                            (let [data (-> e ex-data :data :explain)]
+                              (throw (ex-info (-> data me/humanize str)
+                                              {:display (-> itm meta :name)
+                                               :index   (inc idx)})))))))
+         doall)))   ; because map
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - load-projectfile --------------------------------------------------------------------------- {{{ -

@@ -76,7 +76,7 @@
   []
   (let [curr-pane (-> @*state :accordion :data .getExpandedPane .getText)]
     (case curr-pane
-      "Ad hoc"  (core/load-fns (-> @*state :ad-hoc :data))
+      "Ad hoc"  (core/load-data (-> @*state :ad-hoc :data))
       "Project" (:selection @*state)
       (throw (ex-info (str "An error in get-active-data that shouldn't have happened. `curr-pane`=" curr-pane) {})))))
 
@@ -85,7 +85,7 @@
   []
   (let [curr-pane (-> @*state :accordion :sound-changes .getExpandedPane .getText)]
     (case curr-pane
-      "Ad hoc"  (core/load-fns (-> @*state :ad-hoc :sound-changes))
+      "Ad hoc"  (core/load-scs (-> @*state :ad-hoc :sound-changes))
       "Project" (->> @*state :project :sound-changes (filter :active?) (map :item))
       (throw (ex-info (str "An error in get-active-functions that shouldn't have happened. `curr-pane`=" curr-pane) {})))))
 
@@ -634,7 +634,7 @@
   "Convenience wrapper around `core/grow-tree`, for use by other functions in the gui namespace."
   []
   (let [fns (get-active-functions)
-        val (-> @*state :selection first)]
+        val (-> (get-active-data) first)]
     (core/grow-tree fns val)))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -663,8 +663,8 @@
    filename]     ; open dialog if nil
   ; get the filename, from the event handler, or from a dialog
   (let [
-        ; fname   (or filename (chooser-dialog event))
-        fname   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
+        fname   (or filename (chooser-dialog event))
+        ; fname   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
         project (core/load-project fname)]
     ; change the width of the window to accomodate target data
     ; both height and width must be given, and
@@ -693,7 +693,7 @@
 (defn- format-leaves
   "Format leaves for printing: highlight match with target and add commas."
   [output]
-  (let [target (-> @*state :selection second :display)]
+  (let [target (-> (get-active-data) second :display)]
     (->> output
          :output
          (map :display)
@@ -721,7 +721,7 @@
           :completed (do
                        (swap! *state assoc :dialog nil)     ; close the dialog
                        (swap! *state assoc-in [:output :text]
-                              (str (-> @*state :selection first :display) " ≫ " (format-leaves output))))
+                              (str (-> (get-active-data) first :display) " ≫ " (format-leaves output))))
           :progress  (do
                        (swap! counter inc)
                        (swap! *state assoc-in [:dialog :progress]
@@ -733,7 +733,7 @@
       (message :progress)                                     ; open dialog
       (swap! *state assoc :output {:text "", :tooltip ""})    ; wipe `output-view`
       (core/print-leaves functions                            ; actually run the thing
-                         (-> @*state :selection first vector)
+                         (-> (get-active-data) first vector)
                          cancel-ch
                          output-ch) 
       (async/close! output-ch))))                             ; clean up
@@ -791,7 +791,7 @@
   "Format a tooltip with basic stats of a tree."
   [counts]
   (let [linebreak "%26%2310%3B"]  ; (java.net.URLEncoder/encode "&#10;")
-    (str "A tree from \"" (-> @*state :selection :source-data :display) "\" through" linebreak
+    (str "A tree from \"" (-> (get-active-data) :source-data :display) "\" through" linebreak
          "  " (count (get-active-functions)) " sound changes, with" linebreak
          "  " (format "%,d" (:nodes counts)) " nodes and" linebreak
          "  " (format "%,d" (:leaves counts)) " leaves.")))
