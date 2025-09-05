@@ -6,7 +6,7 @@
 
 Basic usage:
 
-    $ java -jar screpl-0.3.0-standalone.jar
+    $ java -jar screpl-0.4.0-standalone.jar
 
 For more information, see the [doc](#doc/0-toc.md) folder.
 

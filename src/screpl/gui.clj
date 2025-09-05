@@ -679,8 +679,8 @@
    filename]     ; open dialog if nil
   ; get the filename, from the event handler, or from a dialog
   (let [
-        ; fname   (or filename (chooser-dialog event))
-        fname   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
+        fname   (or filename (chooser-dialog event))
+        ; fname   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
         project (core/load-project fname)]
     ; change the width of the window to accomodate target data
     ; both height and width must be given, and
@@ -1026,5 +1026,3 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================== }}} =
-
-(start-gui)
