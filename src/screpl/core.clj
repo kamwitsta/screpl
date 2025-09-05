@@ -303,7 +303,6 @@
       (when (:target-data data)
         (doall (map-indexed (partial validator TargetDatum) (:target-data data)))
         (check-ids data))
-      (println (pair-maker data))
       (pair-maker data))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -

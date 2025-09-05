@@ -22,7 +22,7 @@
 ;; <a id="gui/globals"></a>
 ;; ## Global variables
 
-(declare filter-data load-project message print-paths print-tree stop-gui surround-string unescape-unicode)
+(declare filter-data message stop-gui surround-string unescape-unicode)
 
 ;; Used to pass `:cancel` messages to `core` functions.
 (def cancel-ch (async/chan))
@@ -36,7 +36,7 @@
 
 (def ^:dynamic *state
  "Global variable, holds the state for the GUI."
- (atom {; references to accordions
+ (atom {; active panes in accordions
         :accordion {:data nil
                     :sound-changes nil}
         ; ad hoc tabs
@@ -71,20 +71,13 @@
 ;; <a id="gui/general"></a>
 ;; ## General utility functions
 
-(defn- get-active-pane
-  "Checks which pane is currently open in an accordion."
-  [box]
-  ; when .getExpandedPane or .getText fail, they don't just return nil, they throw an error
-  (try
-    (-> @*state :accordion box .getExpandedPane .getText)
-    (catch Exception _ nil)))
-
-
 (defn- get-active-data
   "Gets active source data from *state."
   []
-  (case (get-active-pane :data)
-    "Ad hoc"  (-> @*state :ad-hoc :data (surround-string "[" "]") core/load-data first)
+  (case (-> @*state :accordion :data)
+    "Ad hoc"  (try
+                (-> @*state :ad-hoc :data (surround-string "[" "]") core/load-data first)
+                (catch Exception _ nil))
     "Project" (:selection @*state)
     nil))
 
@@ -92,8 +85,10 @@
 (defn- get-active-functions
   "Gets active sound change functions from *state."
   []
-  (case (get-active-pane :sound-changes)
-    "Ad hoc"  (-> @*state :ad-hoc :sound-changes core/load-scs)
+  (case (-> @*state :accordion :sound-changes)
+    "Ad hoc"  (try
+                (-> @*state :ad-hoc :sound-changes core/load-scs)
+                (catch Exception _ nil))
     "Project" (->> @*state :project :sound-changes (filter :active?) (map :item))
     nil))
 
@@ -147,11 +142,12 @@
 ; - accordion-created  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
 
 (defn- accordion-created
-  "Cljfx does not export pane-expansion props for :accordion. This function saves a reference to an :accordion so that Java interop can be later used to check which pane is currently expanded, and also opens the first pane as by default all panes are closed on startup."
-  [event    ; on-create event = the accordion
-   type]    ; :data or :sound-changes
-  (swap! *state assoc-in [:accordion type] event)
-  (-> event (.setExpandedPane (-> event .getPanes first))))
+  "Opens the first pane of an accordion (the startup default is all panes closed), and saves its name in `*state :accordion`"
+  [accordion  ; which one
+   event]     ; on-create event = the accordion
+  (let [expanded (-> event .getPanes first)]
+    (-> event (.setExpandedPane expanded))
+    (swap! *state assoc-in [:accordion accordion] (.getText expanded))))
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 ; - data-columns - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ -
@@ -198,12 +194,17 @@
 ; - pane-click-handler - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ -
 
 (defn- pane-click-handler
-  "Makes sure one pane in an accordion is always open."
-  [event]
-  (let [source (-> event .getSource)
-        parent (-> event .getSource .getParent)]
-    (when (-> parent .getExpandedPane nil?)
-      (-> parent (.setExpandedPane source)))))
+  "Makes sure one pane in an accordion is always open, and saves its name in `*state :accordion`."
+  [accordion    ; which one
+   event]
+  (let [source   (-> event .getSource)
+        parent   (-> source .getParent)
+        expanded (-> parent .getExpandedPane)]
+    (if (nil? expanded)
+      (do
+        (-> parent (.setExpandedPane source))
+        (swap! *state assoc-in [:accordion accordion] (.getText source)))
+      (swap! *state assoc-in [:accordion accordion] (.getText expanded)))))
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 ; - scs-item-view - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
@@ -273,8 +274,7 @@
      :divider-positions (if has-target-data? [0.333 0.666] [0.5])
      :items [; sound changes
              {:fx/type fx/ext-on-instance-lifecycle   ; provides :on-created
-              :on-created #(accordion-created % :sound-changes)
-              :padding 0
+              :on-created (partial accordion-created :sound-changes)
               :pref-width column-width
               :desc {:fx/type :accordion
                      :panes [{:fx/type :titled-pane
@@ -282,22 +282,22 @@
                               :content {:fx/type :scroll-pane
                                         :content {:fx/type :v-box
                                                   :children (map-indexed scs-item-view (-> state :project :sound-changes))}}
-                              :on-mouse-clicked pane-click-handler}
+                              :on-mouse-clicked (partial pane-click-handler :sound-changes)}
                              {:fx/type :titled-pane
                               :text "Ad hoc"
                               :content {:fx/type :text-area
                                         :prompt-text "Write sound change function/s here…"
                                         ; there is a :text prop but it i don't seem to be able to bind it to state, so :on-text-changed instead
                                         :on-text-changed {:event/type ::ad-hoc-sc-key-pressed}}
-                              :on-mouse-clicked pane-click-handler}]}}
+                              :on-mouse-clicked (partial pane-click-handler :sound-changes)}]}}
              ; data
              {:fx/type fx/ext-on-instance-lifecycle   ; provides :on-created
-              :on-created #(accordion-created % :data)
+              :on-created (partial accordion-created :data)
               :pref-width column-width
               :desc {:fx/type :accordion
                      :panes [{:fx/type :titled-pane
                               :text "Project"
-                              :on-mouse-clicked pane-click-handler
+                              :on-mouse-clicked (partial pane-click-handler :data)
                               :content {:fx/type :v-box
                                         :padding 0
                                         :children [{:fx/type :h-box
@@ -329,7 +329,7 @@
                                         :prompt-text "Write a source datum here…"
                                         ; there is a :text prop but it i don't seem to be able to bind it to state, so :on-text-changed instead
                                         :on-text-changed {:event/type ::ad-hoc-data-key-pressed}}
-                              :on-mouse-clicked pane-click-handler}]}}]}))
+                              :on-mouse-clicked (partial pane-click-handler :data)}]}}]}))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - dialog ------------------------------------------------------------------------------------- {{{ -
@@ -412,17 +412,12 @@
                     {:fx/type :menu-item
                      :text "Print leaves"
                      :accelerator [:shortcut :l]
-                     :disable (let [data (get-active-data)
-                                    scs (get-active-functions)]
-                                (println "data:" data)
-                                (println "scs:" scs)
-                                (println "and data scs:" (and data scs))
-                                (nil? (and data scs)))
+                     :disable (not-every? seq [(get-active-data) (get-active-functions)])
                      :on-action {:event/type ::print-leaves}}
                     {:fx/type :menu-item
                      :text "Print tree"
                      :accelerator [:shortcut :t]
-                     ; :disable (and (get-active-data) (get-active-functions))
+                     :disable (not-every? seq [(get-active-data) (get-active-functions)])
                      :on-action {:event/type ::print-tree}}]}
            {:fx/type :menu
             :text "Batch"
@@ -539,11 +534,11 @@
                                           :spacing 6
                                           :children [{:fx/type :button
                                                       :text "Print in tree"
-                                                      ; :disable (and (get-active-data) (get-active-functions))
+                                                      :disable (not-every? seq [(get-active-data) (get-active-functions)])
                                                       :on-action {:event/type ::print-tree-paths}}
                                                      {:fx/type :button
                                                       :text "Print paths"
-                                                      ; :disable (and (get-active-data) (get-active-functions))
+                                                      :disable (not-every? seq [(get-active-data) (get-active-functions)])
                                                       :on-action {:event/type ::print-paths}}]}]}]}}
    :showing (-> state :paths-view :showing)
    :title "Paths"})
