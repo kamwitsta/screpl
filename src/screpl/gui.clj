@@ -16,6 +16,7 @@
   (:import [javafx.stage FileChooser FileChooser$ExtensionFilter]
            [com.mifmif.common.regex Generex]))
 
+(def devel false)
 
 ; = globals ==================================================================================== {{{ =
 
@@ -678,9 +679,9 @@
   [event
    filename]     ; open dialog if nil
   ; get the filename, from the event handler, or from a dialog
-  (let [
-        fname   (or filename (chooser-dialog event))
-        ; fname   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
+  (let [fname   (if devel
+                  "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
+                  (or filename (chooser-dialog event)))
         project (core/load-project fname)]
     ; change the width of the window to accomodate target data
     ; both height and width must be given, and
@@ -993,13 +994,17 @@
 
 ;; A layer of abstraction that takes care of the changing state. See https://github.com/cljfx/cljfx?tab=readme-ov-file#renderer 
 (def renderer
-  (fx/create-renderer
-    :middleware (fx/wrap-map-desc root-view)
-    ; improved errors; see https://github.com/cljfx/dev
-    :error-handler (bound-fn [^Throwable ex] (.printStackTrace ^Throwable ex *err*))
-    :opts {:fx.opt/map-event-handler event-handler 
-           ; improved errors; see https://github.com/cljfx/dev
-           :fx.opt/type->lifecycle @(requiring-resolve 'cljfx.dev/type->lifecycle)}))
+  (if devel
+    (fx/create-renderer
+      :middleware (fx/wrap-map-desc root-view)
+      ; improved errors; see https://github.com/cljfx/dev
+      :error-handler (bound-fn [^Throwable ex] (.printStackTrace ^Throwable ex *err*))
+      :opts {:fx.opt/map-event-handler event-handler 
+             ; improved errors; see https://github.com/cljfx/dev
+             :fx.opt/type->lifecycle @(requiring-resolve 'cljfx.dev/type->lifecycle)})
+    (fx/create-renderer
+      :middleware (fx/wrap-map-desc root-view)
+      :opts {:fx.opt/map-event-handler event-handler}))) 
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - start-gui ---------------------------------------------------------------------------------- {{{ -
@@ -1020,9 +1025,13 @@
   "Stop the GUI."
   [_]
   (async/close! cancel-ch)
-  (fx/unmount-renderer *state renderer))
-  ; (System/exit 0))
+  (fx/unmount-renderer *state renderer)
+  (when (not devel)
+    (System/exit 0)))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================== }}} =
+
+(when devel
+  (start-gui))

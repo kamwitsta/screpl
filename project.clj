@@ -30,8 +30,8 @@
                               "-Djava.awt.headless=false"]
                    :plugins  [[lein-marginalia "0.9.2"]]}
              :uberjar {:aot :all
-                       :jvm-opts ["-Dclojure.compiler.direct-linking=true"]}})
-                       ; :injections [(javafx.application.Platform/exit)]}})
+                       :jvm-opts ["-Dclojure.compiler.direct-linking=true"]
+                       :injections [(javafx.application.Platform/exit)]}})
 
 ; generate documentation with Marginalia:
 ; lein marg -d ./doc -f 3-documentation.html -L -X src/screpl/
