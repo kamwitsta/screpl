@@ -16,13 +16,14 @@
   (:import [javafx.stage FileChooser FileChooser$ExtensionFilter]
            [com.mifmif.common.regex Generex]))
 
+(def devel false)
 
 ; = globals ==================================================================================== {{{ =
 
 ;; <a id="gui/globals"></a>
 ;; ## Global variables
 
-(declare filter-data load-project message print-paths print-tree stop-gui unescape-unicode)
+(declare filter-data message stop-gui surround-string unescape-unicode)
 
 ;; Used to pass `:cancel` messages to `core` functions.
 (def cancel-ch (async/chan))
@@ -36,7 +37,13 @@
 
 (def ^:dynamic *state
  "Global variable, holds the state for the GUI."
- (atom {; dialog window for errors and progress reporting
+ (atom {; active panes in accordions
+        :accordion {:data nil
+                    :sound-changes nil}
+        ; ad hoc tabs
+        :ad-hoc {:data ""
+                 :sound-changes ""}
+        ; dialog window for errors and progress reporting
         :dialog nil
         ; filtering data in `data-view`
         :filter-pattern ""
@@ -65,10 +72,27 @@
 ;; <a id="gui/general"></a>
 ;; ## General utility functions
 
+(defn- get-active-data
+  "Gets active source data from *state."
+  []
+  (case (-> @*state :accordion :data)
+    "Ad hoc"  (try
+                (-> @*state :ad-hoc :data (surround-string "[" "]") core/load-data first)
+                (catch Exception _ nil))
+    "Project" (:selection @*state)
+    nil))
+
+
 (defn- get-active-functions
   "Gets active sound change functions from *state."
   []
-  (->> @*state :project :sound-changes (filter :active?) (map :item)))
+  (case (-> @*state :accordion :sound-changes)
+    "Ad hoc"  (try
+                (-> @*state :ad-hoc :sound-changes core/load-scs)
+                (catch Exception _ nil))
+    "Project" (->> @*state :project :sound-changes (filter :active?) (map :item))
+    nil))
+
 
 (defn- sample-strings
   "Generate strings that match a pattern (given as a String)."
@@ -82,7 +106,14 @@
              (string/join "\n  "))))
     (catch Exception e "invalid regular expression")))
 
-(defn unescape-unicode
+
+(defn- surround-string
+  "Adds a prefix and a suffix to a string"
+  [s prefix suffix]
+  (str prefix s suffix))
+
+
+(defn- unescape-unicode
   "Convert Unicode escape sequence to actual character."
   ; Generex can't do it on its own.
   [s]
@@ -109,6 +140,17 @@
 
 ;; <a id="gui/data-view"></a>
 
+; - accordion-created  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
+
+(defn- accordion-created
+  "Opens the first pane of an accordion (the startup default is all panes closed), and saves its name in `*state :accordion`"
+  [accordion  ; which one
+   event]     ; on-create event = the accordion
+  (let [expanded (-> event .getPanes first)]
+    (-> event (.setExpandedPane expanded))
+    (swap! *state assoc-in [:accordion accordion] (.getText expanded))))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 ; - data-columns - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ -
 
 (defn- data-columns
@@ -148,6 +190,22 @@
                        (-> @*state :project :has-target-data?)
                        (str "\nTarget:\n"
                             (->> item second (map get-kvs) (apply str))))}}))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
+; - pane-click-handler - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ -
+
+(defn- pane-click-handler
+  "Makes sure one pane in an accordion is always open, and saves its name in `*state :accordion`."
+  [accordion    ; which one
+   event]
+  (let [source   (-> event .getSource)
+        parent   (-> source .getParent)
+        expanded (-> parent .getExpandedPane)]
+    (if (nil? expanded)
+      (do
+        (-> parent (.setExpandedPane source))
+        (swap! *state assoc-in [:accordion accordion] (.getText source)))
+      (swap! *state assoc-in [:accordion accordion] (.getText expanded)))))
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 ; - scs-item-view - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
@@ -216,35 +274,63 @@
     {:fx/type :split-pane
      :divider-positions (if has-target-data? [0.333 0.666] [0.5])
      :items [; sound changes
-             {:fx/type :scroll-pane
-              :content {:fx/type :v-box
-                        :children (map-indexed scs-item-view (-> state :project :sound-changes))}
-              :pref-width column-width}
+             {:fx/type fx/ext-on-instance-lifecycle   ; provides :on-created
+              :on-created (partial accordion-created :sound-changes)
+              :pref-width column-width
+              :desc {:fx/type :accordion
+                     :panes [{:fx/type :titled-pane
+                              :text "Project"
+                              :content {:fx/type :scroll-pane
+                                        :content {:fx/type :v-box
+                                                  :children (map-indexed scs-item-view (-> state :project :sound-changes))}}
+                              :on-mouse-clicked (partial pane-click-handler :sound-changes)}
+                             {:fx/type :titled-pane
+                              :text "Ad hoc"
+                              :content {:fx/type :text-area
+                                        :prompt-text "Write sound change function/s here…"
+                                        ; there is a :text prop but it i don't seem to be able to bind it to state, so :on-text-changed instead
+                                        :on-text-changed {:event/type ::ad-hoc-sc-key-pressed}}
+                              :on-mouse-clicked (partial pane-click-handler :sound-changes)}]}}
              ; data
-             {:fx/type :v-box
-              :children [{:fx/type :h-box
-                          :children [{:fx/type :text-field
-                                      :prompt-text "Filter using regular expressions"
-                                      :text (-> state :filter-pattern)
-                                      :h-box/hgrow :always
-                                      :on-key-pressed {:event/type ::filter-key-pressed}
-                                      :on-text-changed {:event/type ::change-filter-pattern}
-                                      :tooltip {:fx/type :tooltip
-                                                :show-delay [333 :ms]
-                                                :text (-> state :filter-pattern sample-strings)}}
-                                     {:fx/type :button
-                                      :text "Filter"
-                                      :disable (-> @*state :project :filename nil?)
-                                      :on-action {:event/type ::filter-data}}]}
-                         {:fx/type :table-view
-                          :column-resize-policy :constrained  ; don't show an extra column
-                          :columns (data-columns has-target-data?)
-                          :items (-> state :project :data-filtered)
-                          :on-selected-item-changed {:event/type ::select-datum}
-                          :pref-width (* column-width (if has-target-data? 2.25 1))
-                          :row-factory {:fx/cell-type :table-row
-                                        :describe data-tooltip}
-                          :selection-mode :single}]}]}))
+             {:fx/type fx/ext-on-instance-lifecycle   ; provides :on-created
+              :on-created (partial accordion-created :data)
+              :pref-width column-width
+              :desc {:fx/type :accordion
+                     :panes [{:fx/type :titled-pane
+                              :text "Project"
+                              :on-mouse-clicked (partial pane-click-handler :data)
+                              :content {:fx/type :v-box
+                                        :padding 0
+                                        :children [{:fx/type :h-box
+                                                    :children [{:fx/type :text-field
+                                                                :prompt-text "Filter data using regular expressions…"
+                                                                :text (-> state :filter-pattern)
+                                                                :h-box/hgrow :always
+                                                                :on-key-pressed {:event/type ::filter-key-pressed}
+                                                                :on-text-changed {:event/type ::change-filter-pattern}
+                                                                :tooltip {:fx/type :tooltip
+                                                                          :show-delay [333 :ms]
+                                                                          :text (-> state :filter-pattern sample-strings)}}
+                                                               {:fx/type :button
+                                                                :text "Filter"
+                                                                :disable (-> @*state :project :filename nil?)
+                                                                :on-action {:event/type ::filter-data}}]}
+                                                   {:fx/type :table-view
+                                                    :column-resize-policy :constrained  ; don't show an extra column
+                                                    :columns (data-columns has-target-data?)
+                                                    :items (-> state :project :data-filtered)
+                                                    :on-selected-item-changed {:event/type ::select-datum}
+                                                    :pref-width (* column-width (if has-target-data? 2.25 1))
+                                                    :row-factory {:fx/cell-type :table-row
+                                                                  :describe data-tooltip}
+                                                    :selection-mode :single}]}}
+                             {:fx/type :titled-pane
+                              :text "Ad hoc"
+                              :content {:fx/type :text-area
+                                        :prompt-text "Write a source datum here…"
+                                        ; there is a :text prop but it i don't seem to be able to bind it to state, so :on-text-changed instead
+                                        :on-text-changed {:event/type ::ad-hoc-data-key-pressed}}
+                              :on-mouse-clicked (partial pane-click-handler :data)}]}}]}))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - dialog ------------------------------------------------------------------------------------- {{{ -
@@ -327,12 +413,12 @@
                     {:fx/type :menu-item
                      :text "Print leaves"
                      :accelerator [:shortcut :l]
-                     :disable (-> @*state :selection nil?)
+                     :disable (not-every? seq [(get-active-data) (get-active-functions)])
                      :on-action {:event/type ::print-leaves}}
                     {:fx/type :menu-item
                      :text "Print tree"
                      :accelerator [:shortcut :t]
-                     :disable (-> @*state :selection nil?)
+                     :disable (not-every? seq [(get-active-data) (get-active-functions)])
                      :on-action {:event/type ::print-tree}}]}
            {:fx/type :menu
             :text "Batch"
@@ -449,11 +535,11 @@
                                           :spacing 6
                                           :children [{:fx/type :button
                                                       :text "Print in tree"
-                                                      :disable (-> state :selection empty?)
+                                                      :disable (not-every? seq [(get-active-data) (get-active-functions)])
                                                       :on-action {:event/type ::print-tree-paths}}
                                                      {:fx/type :button
                                                       :text "Print paths"
-                                                      :disable (-> state :selection empty?)
+                                                      :disable (not-every? seq [(get-active-data) (get-active-functions)])
                                                       :on-action {:event/type ::print-paths}}]}]}]}}
    :showing (-> state :paths-view :showing)
    :title "Paths"})
@@ -470,7 +556,7 @@
    :root {:fx/type :v-box
           :children [(menu-view state)
                      {:fx/type :split-pane
-                      ; ↓ forces the recreation of the layout after the data (and in consequence, window size) changes
+                      ; ↓ forces the recreation of the layout after the data change (and in consequence, window size)
                       :fx/key (some? (-> state :project :has-target-data?))
                       :divider-positions [0.5]
                       :orientation :vertical
@@ -565,7 +651,7 @@
   "Convenience wrapper around `core/grow-tree`, for use by other functions in the gui namespace."
   []
   (let [fns (get-active-functions)
-        val (-> @*state :selection first)]
+        val (-> (get-active-data) first)]
     (core/grow-tree fns val)))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -593,8 +679,9 @@
   [event
    filename]     ; open dialog if nil
   ; get the filename, from the event handler, or from a dialog
-  (let [fname   (or filename (chooser-dialog event))
-        ; fname   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
+  (let [fname   (if devel
+                  "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
+                  (or filename (chooser-dialog event)))
         project (core/load-project fname)]
     ; change the width of the window to accomodate target data
     ; both height and width must be given, and
@@ -609,8 +696,8 @@
                             :item itm))
                 (:sound-changes project))
           new-project (assoc project
-                             :sound-changes scs
-                             :data-filtered (:data project))]
+                             :data-filtered (:data project)
+                             :sound-changes scs)]
       (swap! *state assoc :project new-project))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -622,8 +709,9 @@
 
 (defn- format-leaves
   "Format leaves for printing: highlight match with target and add commas."
-  [output]
-  (let [target (-> @*state :selection second :display)]
+  [data
+   output]
+  (let [target (-> data second :display)]
     (->> output
          :output
          (map :display)
@@ -634,10 +722,11 @@
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
 
-(defn- print-leaves
+(defn print-leaves
   "Wrapper around `core/print-leaves`."
   [_]
-  (let [functions   (get-active-functions)
+  (let [data        (get-active-data)
+        functions   (get-active-functions)
         counter     (atom 0)
         output-ch   (async/chan 12)]  ; 12 is just to make sure nothing has to wait
     ; listen for output
@@ -651,7 +740,7 @@
           :completed (do
                        (swap! *state assoc :dialog nil)     ; close the dialog
                        (swap! *state assoc-in [:output :text]
-                              (str (-> @*state :selection first :display) " ≫ " (format-leaves output))))
+                              (str (-> data first :display) " ≫ " (format-leaves data output))))
           :progress  (do
                        (swap! counter inc)
                        (swap! *state assoc-in [:dialog :progress]
@@ -663,9 +752,9 @@
       (message :progress)                                     ; open dialog
       (swap! *state assoc :output {:text "", :tooltip ""})    ; wipe `output-view`
       (core/print-leaves functions                            ; actually run the thing
-                         (-> @*state :selection first vector)
+                         data 
                          cancel-ch
-                         output-ch) 
+                         output-ch)
       (async/close! output-ch))))                             ; clean up
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -721,7 +810,7 @@
   "Format a tooltip with basic stats of a tree."
   [counts]
   (let [linebreak "%26%2310%3B"]  ; (java.net.URLEncoder/encode "&#10;")
-    (str "A tree from \"" (-> @*state :selection :source-data :display) "\" through" linebreak
+    (str "A tree from \"" (-> (get-active-data) :source-data :display) "\" through" linebreak
          "  " (count (get-active-functions)) " sound changes, with" linebreak
          "  " (format "%,d" (:nodes counts)) " nodes and" linebreak
          "  " (format "%,d" (:leaves counts)) " leaves.")))
@@ -804,6 +893,10 @@
       ::print-tree (print-tree nil #{})
       ::print-tree-paths (print-tree-paths nil)
       ::reload-project (load-project event (-> @*state :project :filename))
+
+      ; ad-hoc
+      ::ad-hoc-data-key-pressed (swap! *state assoc-in [:ad-hoc :data] (:fx/event event))
+      ::ad-hoc-sc-key-pressed (swap! *state assoc-in [:ad-hoc :sound-changes] (:fx/event event))
 
       ; filtering
       ::change-filter-pattern (swap! *state assoc :filter-pattern (:fx/event event))
@@ -901,13 +994,17 @@
 
 ;; A layer of abstraction that takes care of the changing state. See https://github.com/cljfx/cljfx?tab=readme-ov-file#renderer 
 (def renderer
-  (fx/create-renderer
-    :middleware (fx/wrap-map-desc root-view)
-    ; improved errors; see https://github.com/cljfx/dev
-    ; :error-handler (bound-fn [^Throwable ex] (.printStackTrace ^Throwable ex *err*))
-    :opts {:fx.opt/map-event-handler event-handler})) 
-           ; improved errors; see https://github.com/cljfx/dev
-           ; :fx.opt/type->lifecycle @(requiring-resolve 'cljfx.dev/type->lifecycle)}))
+  (if devel
+    (fx/create-renderer
+      :middleware (fx/wrap-map-desc root-view)
+      ; improved errors; see https://github.com/cljfx/dev
+      :error-handler (bound-fn [^Throwable ex] (.printStackTrace ^Throwable ex *err*))
+      :opts {:fx.opt/map-event-handler event-handler 
+             ; improved errors; see https://github.com/cljfx/dev
+             :fx.opt/type->lifecycle @(requiring-resolve 'cljfx.dev/type->lifecycle)})
+    (fx/create-renderer
+      :middleware (fx/wrap-map-desc root-view)
+      :opts {:fx.opt/map-event-handler event-handler}))) 
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - start-gui ---------------------------------------------------------------------------------- {{{ -
@@ -929,8 +1026,12 @@
   [_]
   (async/close! cancel-ch)
   (fx/unmount-renderer *state renderer)
-  (System/exit 0))
+  (when (not devel)
+    (System/exit 0)))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================== }}} =
+
+(when devel
+  (start-gui))

@@ -1,4 +1,4 @@
-(defproject screpl "0.3.0"    ; also update in cli.clj and in doc files
+(defproject screpl "0.4.0"    ; also update in the doc files
   :description "Replication of sound changes"
   :url "https://github.com/kamwitsta/screpl"
   :license {:name "CC BY-NC-SA 4.0 or later"
@@ -34,4 +34,4 @@
                        :injections [(javafx.application.Platform/exit)]}})
 
 ; generate documentation with Marginalia:
-; lein marg -d ./doc -f 4-documentation.html -L -X src/screpl/
+; lein marg -d ./doc -f 3-documentation.html -L -X src/screpl/
