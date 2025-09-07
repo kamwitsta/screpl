@@ -1,10 +1,11 @@
 # Change Log
 ------------
 
-## [0.5] –
+## [0.4.1] – 2025-09-07
 ----------
 ### Changed
-- tweaks to project.clj
+- fixed a bug in gui/print-leaves
+- tweaks in project.clj
 
 
 ## [0.4] – 2025-09-05

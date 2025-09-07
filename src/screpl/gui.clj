@@ -654,7 +654,7 @@
   "Convenience wrapper around `core/grow-tree`, for use by other functions in the gui namespace."
   []
   (let [fns (get-active-functions)
-        val (-> (get-active-data) first)]
+        val (first (get-active-data))]
     (core/grow-tree fns val)))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -728,7 +728,7 @@
 (defn print-leaves
   "Wrapper around `core/print-leaves`."
   [_]
-  (let [data        (get-active-data)
+  (let [data        (-> (get-active-data) first vector)
         functions   (get-active-functions)
         counter     (atom 0)
         output-ch   (async/chan 12)]  ; 12 is just to make sure nothing has to wait

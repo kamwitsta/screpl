@@ -1,4 +1,4 @@
-(defproject screpl "0.4.0"    ; also update in the doc files
+(defproject screpl "0.4.1"
   :description "Replication of sound changes"
   :url "https://github.com/kamwitsta/screpl"
   :license {:name "CC BY-NC-SA 4.0 or later"
