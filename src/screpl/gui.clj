@@ -16,14 +16,17 @@
   (:import [javafx.stage FileChooser FileChooser$ExtensionFilter]
            [com.mifmif.common.regex Generex]))
 
-(def devel false)
-
 ; = globals ==================================================================================== {{{ =
 
 ;; <a id="gui/globals"></a>
 ;; ## Global variables
 
 (declare filter-data message stop-gui surround-string unescape-unicode)
+
+;; Shortcuts and conveniences for development (see `:jvm-opts` in `project.clj`).
+(def dev-mode
+  (Boolean/parseBoolean
+    (System/getProperty "dev.mode" "false")))
 
 ;; Used to pass `:cancel` messages to `core` functions.
 (def cancel-ch (async/chan))
@@ -679,7 +682,7 @@
   [event
    filename]     ; open dialog if nil
   ; get the filename, from the event handler, or from a dialog
-  (let [fname   (if devel
+  (let [fname   (if dev-mode
                   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
                   (or filename (chooser-dialog event)))
         project (core/load-project fname)]
@@ -994,7 +997,7 @@
 
 ;; A layer of abstraction that takes care of the changing state. See https://github.com/cljfx/cljfx?tab=readme-ov-file#renderer 
 (def renderer
-  (if devel
+  (if dev-mode
     (fx/create-renderer
       :middleware (fx/wrap-map-desc root-view)
       ; improved errors; see https://github.com/cljfx/dev
@@ -1026,12 +1029,12 @@
   [_]
   (async/close! cancel-ch)
   (fx/unmount-renderer *state renderer)
-  (when (not devel)
+  (when-not dev-mode
     (System/exit 0)))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================== }}} =
 
-(when devel
+(when dev-mode
   (start-gui))

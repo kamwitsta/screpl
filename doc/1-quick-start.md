@@ -21,7 +21,7 @@ If you want to compile SCRepl yourself, you will need [clj](https://clojure.org/
 
 Having downloaded and unzipped SCrepl, navigate to the main folder and run
 
-    java -jar target/uberjar/screpl-0.4.0-standalone.jar
+    java -jar target/uberjar/screpl.jar
 
 After a short while, a window should appear. Please contact the author if it does not.
 
