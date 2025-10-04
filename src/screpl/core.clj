@@ -140,7 +140,7 @@
 
 ;; <a id="core/source-target-datum"></a>
 
-(def DataId
+(def DataLink
   ;; This repeats in Source- and TargetDatum
   [:or int? keyword? string?])
 
@@ -148,13 +148,13 @@
   ;; A single item in the source data.
   [:map
    [:display string?]
-   [:id {:optional true} #'DataId]])
+   [:link {:optional true} #'DataLink]])
 
 (def TargetDatum
   ;; A single item in the target data.
   [:map
    [:display string?]
-   [:id #'DataId]])
+   [:link #'DataLink]])
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - sound change functions --------------------------------------------------------------------- {{{ -
@@ -179,26 +179,20 @@
 ;; <a id="core/projectfile"></a>
 
 (def =>GetDataFn
-  ; A function that retrieves data from a database and converts them to regular Clojure hash maps. Takes no arguments and returns data as vectors wrapped in a map: `{:source-data [SourceDatum]}` or `{:source-data [SourceDatum], :target-data [TargetDatum]}`.
+  ; A function that retrieves data from a database and converts them to regular Clojure hash maps. Takes no arguments and returns data as a vector.
   (m/schema
     [:=>
      :cat
-     [:map [:source-data [:vector #'SourceDatum]]
-           [:target-data {:optional true} [:vector #'TargetDatum]]]]
+     [:or [:vector #'SourceDatum]
+          [:vector #'TargetDatum]]]
     {::m/function-checker mg/function-checker}))
 
 (def ProjectFile
-  ;; Spec for the file containing paths to other files in the project.
-  [:or
-   ;; Data can either be loaded from files…
-   [:map
-    [:sound-changes string?]
-    [:source-data string?]
-    [:data-target {:optional true} string?]]
-   ;; … or from a database.
-   [:map
-    [:sound-changes string?]
-    [:get-data-fn #'=>GetDataFn]]])
+  ;; Spec for the file containing pointers to the components of a project.
+  [:map
+   [:sound-changes string?]
+   [:source-data [:or string? #'=>GetDataFn]]
+   [:target-data {:optional true} [:or string? #'=>GetDataFn]]])
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
@@ -208,7 +202,7 @@
 ;; <a id="core/data"></a>
 ;; ## Loading users’ code and data
 
-;; The only function that is directly exposed via the UI is [load-project](#core/load-project), which calls all the other functions. The reason for this is this: 1) the `:id` key is only required from source data when target data are also present, and can be omitted otherwise; 2) the ID’s in source data must match the ID’s in target data. Validating the former and ensuring the latter can only be done when all the data are loaded together in one go.
+;; The only function that is directly exposed via the UI is [load-project](#core/load-project), which calls all the other functions. The reason for this is this: 1) the `:link` key is only required from source data when target data are also present, and can be omitted otherwise; 2) the `:link`’s in source data must match the `:link`’s in target data. Validating the former and ensuring the latter can only be done when all the data are loaded together in one go.
 ;; Indirectly, the UI also calls [load-data](#core/load-data) and [load-scs](#core/load-scs).
 
 ;; - [load-project](#core/load-project)
@@ -263,12 +257,17 @@
   "Evaluates and validates data. Accepts a project (a map; when called by `core/load-project`) or a string (when called by `gui/get-active-data`). Returns a hash map with `:source-data` and `target-data`."
   [x]
   (letfn
-    [(loader [project key]
-      (->> project
-           key
-           (attach-to-path (:project-file project))
-           slurp
-           edn/read-string))
+
+    [(loader [x key]
+       (if (fn? x)
+         ; project file has a loader function
+         ((x))
+         ; project file has path to a file
+         (->> x
+              key
+              (attach-to-path (:project-file x))
+              slurp
+              edn/read-string)))
 
      ; {:source-data [s]} -> [[s] [s] …]
      ; {:source-data [s], :target-data [t]} -> [[s t] [s t] …]
@@ -290,19 +289,17 @@
                                :index (inc idx)
                                :filename (if (= spec SourceDatum) "source data" "target data")}))))))]
 
-    (let [data (cond
-                 ; when x is a string (gui ad-hoc)
-                 (string? x) {:source-data (edn/read-string x)}
-                 ; when x is a project that gets data from a db
-                 (:get-data-fn x) ((:get-data-fn x))
-                 ; when x is a project that gets data from files
-                 :else (cond-> {:source-data (loader x :source-data)}
-                          (:target-data x)
-                          (assoc :target-data (loader x :target-data))))]
+    (let [data (if (string? x)
+                 ; ad-hoc in the gui
+                 {:source-data (edn/read-string x)}
+                 ; project file
+                 (cond-> {:source-data (loader x :source-data)}
+                    (:target-data x)
+                    (assoc :target-data (loader x :target-data))))]
       (doall (map-indexed (partial validator SourceDatum) (:source-data data)))
       (when (:target-data data)
-        (doall (map-indexed (partial validator TargetDatum) (:target-data data)))
-        (check-ids data))
+        (doall (map-indexed (partial validator TargetDatum) (:target-data data))))
+        ; (check-ids data))
       (pair-maker data))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -398,7 +395,7 @@
 ;; <a id="cor/grow-tree"></a>
 
 (defn ^:export grow-tree
-  "Pipelines a value through a series of functions while keeping the intermediate results, in effect growing a tree. Functions that do not change the previous value are skipped. Returns a lazy sequence of hash-map with the keys `:id`, `:label`, `:value`, `:fname` and `:children` where `:value` is the given node, `:fname` is the name of the function that produces `:children` from it, and `:label` is a convenience copy of `-> :value :display`. Note that besides `:id` there might also be a second, unrelated `:id` inside `:value`."
+  "Pipelines a value through a series of functions while keeping the intermediate results, in effect growing a tree. Functions that do not change the previous value are skipped. Returns a lazy sequence of hash-map with the keys `:id`, `:label`, `:value`, `:fname` and `:children` where `:value` is the given node, `:fname` is the name of the function that produces `:children` from it, and `:label` is a convenience copy of `-> :value :display`."
   [functions     ; the pipeline
    value]        ; the value to be pipelined
   (let [id-counter (atom -1)]
