@@ -159,10 +159,10 @@
 (defn- data-columns
   "Makes data columns for `data-view`."
   [has-target-data?]
-  (let [id-col  {:fx/type :table-column
-                 :cell-value-factory #(-> % first :id)
+  (let [lnk-col {:fx/type :table-column
+                 :cell-value-factory #(-> % first :link)
                  :pref-width (* column-width 1/4)
-                 :text "ID"}
+                 :text "Link"}
         src-col {:fx/type :table-column
                  :cell-value-factory #(-> % first :display)
                  :pref-width column-width
@@ -172,7 +172,7 @@
                  :pref-width column-width
                  :text "Target"}]
     (if has-target-data?
-      [id-col src-col trg-col]
+      [lnk-col src-col trg-col]
       [src-col])))
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} -
@@ -182,12 +182,12 @@
   "Makes a tooltip for a data item."
   [item]
   (letfn [(get-kvs [[k v]]
-            (if (= k :id)
+            (if (= k :link)
               ""
               (str "  " (name k) ": " (pr-str v) "\n")))]
     {:tooltip {:fx/type :tooltip
                :show-delay [333 :ms]
-               :text (cond-> (str "ID: " (-> item first :id) "\n"
+               :text (cond-> (str "Link: " (-> item first :link) "\n"
                                  "\nSource:\n"
                                  (->> item first (map get-kvs) (apply str)))
                        (-> @*state :project :has-target-data?)
@@ -259,7 +259,7 @@
                              (swap! *state update-in [:project :sound-changes]
                                     (partial map (fn [i]
                                                    (cond-> i
-                                                     (= (:id i) (:id item))
+                                                     (= (:link i) (:link item))
                                                      (update :active? not))))))}
                {:fx/type :label
                 :disable (-> item :active? not)
@@ -955,7 +955,7 @@
     (swap! *state assoc-in [:project :data-filtered] (-> @*state :project :data))
     (let [pattern (-> @*state :filter-pattern re-pattern)
           result  (filter
-                    #(->> %                              ; ({:id 1, :display "s"} {:id 1, :display "t"})
+                    #(->> %                              ; ({:link 1, :display "s"} {:link 1, :display "t"})
                          (map vals)                      ; ((1 "s") (1 "t"))
                          flatten                         ; (1 "s" 1 "t")
                          (map str)                       ; ("1" "s" "1" "t")

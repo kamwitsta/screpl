@@ -72,8 +72,8 @@
 ;; <a id="core/index-coll"></a>
 
 (defn index-coll [coll & [key]]
-  "Convert a collection of maps to an indexed collection. If `key` is not given, uses `:id`."
-  (let [key (or key :id)]
+  "Convert a collection of maps to an indexed collection. If `key` is not given, uses `:link`."
+  (let [key (or key :link)]
     (persistent! 
       (reduce (fn [acc item] 
                 (assoc! acc (get item key) item))
@@ -275,7 +275,7 @@
         (if target-data
           (let [target-indexed (index-coll target-data)]
             (for [s source-data]
-              [s (-> s :id target-indexed)]))
+              [s (-> s :link target-indexed)]))
           (map vector source-data)))
      
      (validator [spec idx itm]
