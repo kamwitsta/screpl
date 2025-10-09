@@ -209,44 +209,33 @@
 ;; - [load-projectfile](#core/load-projectfile)
 ;; - [load-data](#core/load-data)
 ;; - [load-scs](#core/load-scs)
-;; - [check-ids](#core/check-ids)
+;; - [check-links](#core/check-links)
 
-; - check-ids ---------------------------------------------------------------------------------- {{{ -
+; - check-links -------------------------------------------------------------------------------- {{{ -
 
-;; <a id="core/check-ids"></a>
+;; <a id="core/check-links"></a>
 
-(defn check-ids
-  "Makes sure ids in source and target data are present, unique, and matching."
+(defn check-links
+  "Makes sure `:link`s in source and target data are present, unique, and matching. Returns a vector of warnings."
   [data]     ; hash-map with `:source-data` and `:target-data`
 
-  (let [src-ids (->> data :source-data (map :id))
-        trg-ids (->> data :target-data (map :id))]
+  (let [src-links (->> data :source-data (map :link))
+        trg-links (->> data :target-data (map :link))
+        warnings  (atom [])]
 
     ; check unique
-    (when-let [dups (seq (duplicates src-ids))]
-      (throw (ex-info (str "Duplicate ids: " dups) {:filename "source data"})))
-    (when-let [dups (seq (duplicates trg-ids))]
-      (throw (ex-info (str "Duplicate ids: " dups) {:filename "target data"})))
+    (when-let [dups (seq (duplicates src-links))]
+      (throw (ex-info (str "Duplicate links: " dups) {:filename "source data"})))
+    (when-let [dups (seq (duplicates trg-links))]
+      (throw (ex-info (str "Duplicate links: " dups) {:filename "target data"})))
 
     ; check missing ids
-    (when-let [miss (->> (map #(when (nil? %1) %2) src-ids (->> data :source-data (map :display)))
-                         (remove nil?)
-                         (seq))]
-      (throw (ex-info (str "Missing ids: " miss) {:filename "source data"})))
-    (when-let [miss (->> (map #(when (nil? %1) %2) trg-ids (->> data :target-data (map :display)))
-                         (remove nil?)
-                         (seq))]
-      (throw (ex-info (str "Missing ids: " miss) {:filename "target data"})))
-
-    ; check unmatched ids
-    (when-let [unm (->> (set/difference (set src-ids) (set trg-ids))
-                        (remove nil?)
-                        (seq))]
-      (throw (ex-info (str "Unmatched ids: " unm) {:filename "source data"})))
-    (when-let [unm (->> (set/difference (set trg-ids) (set src-ids))
-                        (remove nil?)
-                        (seq))]
-      (throw (ex-info (str "Unmatched ids: " unm) {:filename "target data"})))))
+    (when-let [miss (filter #(-> %1 :link nil?) (:source-data data))]
+      (swap! warnings conj {:message (str "Missing links: " miss)
+                            :filename "source data"}))
+    (when-let [miss (filter #(-> %1 :link nil?) (:target-data data))]
+      (swap! warnings conj {:message (str "Missing links: " miss)
+                            :filename "target data"}))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - load-data ---------------------------------------------------------------------------------- {{{ -
@@ -298,8 +287,8 @@
                     (assoc :target-data (loader x :target-data))))]
       (doall (map-indexed (partial validator SourceDatum) (:source-data data)))
       (when (:target-data data)
-        (doall (map-indexed (partial validator TargetDatum) (:target-data data))))
-        ; (check-ids data))
+        (doall (map-indexed (partial validator TargetDatum) (:target-data data)))
+        (check-links data))
       (pair-maker data))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
