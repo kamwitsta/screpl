@@ -209,19 +209,19 @@
 ;; - [load-projectfile](#core/load-projectfile)
 ;; - [load-data](#core/load-data)
 ;; - [load-scs](#core/load-scs)
-;; - [check-links](#core/check-links)
 
-; - check-links -------------------------------------------------------------------------------- {{{ -
+; - load-data --------------------------------------------------------------------------------- {{{ -
 
-;; <a id="core/check-links"></a>
+;; <a id="core/load-data"></a>
 
-(defn check-links
-  "Makes sure `:link`s in source and target data are present, unique, and matching. Returns a vector of warnings."
-  [data]     ; hash-map with `:source-data` and `:target-data`
+; - link-checker - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ - 
 
+(defn- link-checker
+  "Makes sure `:link`s are unique and matching."
+  [data         ; hash-map with `:source-data` and `:target-data`
+   warnings]    ; atom, vector of strings
   (let [src-links (->> data :source-data (map :link))
-        trg-links (->> data :target-data (map :link))
-        warnings  (atom [])]
+        trg-links (->> data :target-data (map :link))]
 
     ; check unique
     (when-let [dups (seq (duplicates src-links))]
@@ -237,61 +237,76 @@
       (swap! warnings conj {:message (str "Missing links: " miss)
                             :filename "target data"}))))
 
-; ---------------------------------------------------------------------------------------------- }}} -
-; - load-data ---------------------------------------------------------------------------------- {{{ -
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - }}} - 
+; - loader  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ - 
 
-;; <a id="core/load-data"></a>
+(defn- loader
+  "Loads data either by running the user-specified function or by reading from file."
+  [project key]
+  (let [x (key project)]
+    (if (fn? x)
+      ; project file has a loader function
+      ((x))
+      ; project file has path to a file
+      (->> x
+           (attach-to-path (:project-file project))
+           slurp
+           edn/read-string))))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - }}} - 
+; - pair-maker - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ - 
+
+(defn- pair-maker
+  "Combines source and target data into pairs:
+    {:source-data [s]} -> [[s] [s] …]
+    {:source-data [s], :target-data [t]} -> [[s t] [s t] …]"
+  [{:keys [source-data target-data]}]
+  (if target-data
+    (let [target-indexed (index-coll target-data)]
+      (for [s source-data]
+        [s (-> s :link target-indexed)]))
+    (map vector source-data)))
+ 
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - }}} - 
+; - validator - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ - 
+
+(defn- validator
+  "Validates data against a spec."
+  [spec idx itm]
+  (try
+    (m/assert spec itm)
+    (catch Exception e
+      (let [data (-> e ex-data :data :explain)]
+        (throw (ex-info (-> data me/humanize str)
+                        {:display (-> data :value :display)
+                         :field (-> data :errors first :in first)
+                         :index (inc idx)
+                         :filename (if (= spec SourceDatum) "source data" "target data")}))))))
+
+(defn- validator
+  "Validates data against a spec."
+  [project key spec]
+  (loop [data (key project)
+         acc  []]
+    (if (empty? data)
+      acc
+      (try
+        (->> data first (m/assert spec))
+        (recur ())))))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - }}} - 
 
 (defn load-data
-  "Evaluates and validates data. Accepts a project (a map; when called by `core/load-project`) or a string (when called by `gui/get-active-data`). Returns a hash map with `:source-data` and `target-data`."
-  [x]
-  (letfn
+  "Evaluates and validates data. Accepts a project (a map; when called by `core/load-project`) or a string (when called by `gui/get-active-data`)."
+  [x]   ; a map or a string
+  (cond-> {}
+    (string? x)      (assoc :source-data (edn/read-string x))       ; x comes from ad-hoc in the gui
+    (map? x)         (assoc :source-data (loader :source-data x))   ; x is a project
+    (:target-data x) (assoc :target-data (loader :target-data x))
+    true             (validator :source-data SourceDatum)))
+      ; {:result (pair-maker data)
 
-    [(loader [x key]
-       (if (fn? x)
-         ; project file has a loader function
-         ((x))
-         ; project file has path to a file
-         (->> x
-              key
-              (attach-to-path (:project-file x))
-              slurp
-              edn/read-string)))
-
-     ; {:source-data [s]} -> [[s] [s] …]
-     ; {:source-data [s], :target-data [t]} -> [[s t] [s t] …]
-     (pair-maker [{:keys [source-data target-data]}]
-        (if target-data
-          (let [target-indexed (index-coll target-data)]
-            (for [s source-data]
-              [s (-> s :link target-indexed)]))
-          (map vector source-data)))
-     
-     (validator [spec idx itm]
-       (try
-          (m/assert spec itm)
-          (catch Exception e
-            (let [data (-> e ex-data :data :explain)]
-              (throw (ex-info (-> data me/humanize str)
-                              {:display (-> data :value :display)
-                               :field (-> data :errors first :in first)
-                               :index (inc idx)
-                               :filename (if (= spec SourceDatum) "source data" "target data")}))))))]
-
-    (let [data (if (string? x)
-                 ; ad-hoc in the gui
-                 {:source-data (edn/read-string x)}
-                 ; project file
-                 (cond-> {:source-data (loader x :source-data)}
-                    (:target-data x)
-                    (assoc :target-data (loader x :target-data))))]
-      (doall (map-indexed (partial validator SourceDatum) (:source-data data)))
-      (when (:target-data data)
-        (doall (map-indexed (partial validator TargetDatum) (:target-data data)))
-        (check-links data))
-      (pair-maker data))))
-
-; ---------------------------------------------------------------------------------------------- }}} -
+; --------------------------------------------------------------------------------------------- }}} -
 ; - load-scs ----------------------------------------------------------------------------------- {{{ -
 
 ;; <a id="core/load-scs"></a>
@@ -351,7 +366,7 @@
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
-; - load-project ------------------------------------------------------------------------------- {{{ -
+; - load-project ------------------------------------------------------------------------------ {{{ -
 
 ;; <a id="core/load-project"></a>
 
@@ -362,13 +377,14 @@
         scs     (load-scs project)
         data    (load-data project)]
     {:filename filename
-     :data data
-     :has-target-data? (-> data first count (= 2))
-     :sound-changes scs}))
+     :data (:result data)
+     :has-target-data? (-> data :result first count (= 2))
+     :sound-changes scs
+     :warnings (:warnings data)}))
 
-; ---------------------------------------------------------------------------------------------- }}} -
+; --------------------------------------------------------------------------------------------- }}} -
 
-; ============================================================================================== }}} =
+; ============================================================================================= }}} =
 ; = single ===================================================================================== {{{ =
 
 ;; <a id="core/single"></a>
@@ -559,3 +575,5 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================== }}} =
+
+(load-data "{:source-data \"a\"}")

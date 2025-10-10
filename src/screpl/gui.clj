@@ -380,6 +380,11 @@
        :showing true
        :width 200}
 
+      :warning
+      {:fx/type :alert
+       :alert-type :warning
+       :button-types [:ok]}
+
       (throw (ex-info (str "An error in dialog-view that shouldn't have happened. `state`=" state) {})))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -701,7 +706,9 @@
           new-project (assoc project
                              :data-filtered (:data project)
                              :sound-changes scs)]
-      (swap! *state assoc :project new-project))))
+      (swap! *state assoc :project new-project)
+      (when-let [warnings (:warnings project)]
+        (message :warning warnings)))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-leaves ------------------------------------------------------------------------------- {{{ -
@@ -971,7 +978,7 @@
 
 (defn- message
   "Displays a dialog with a message."
-  [type          ; :error, :progress
+  [type          ; :error, :progress, :warning
    & messages]   ; an Exception when :error, string(s) or number(s) otherwise
   (case type
     :error    (let [err      (-> messages first Throwable->map)
@@ -987,7 +994,10 @@
     :progress (swap! *state assoc :dialog
                      {:type :progress
                       :message "Processing…"
-                      :progress -1})))
+                      :progress -1})
+    :warning  (swap! *state assoc :dialog
+                     {:type :warning
+                      :message (string/join "\n" (first messages))})))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
