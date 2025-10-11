@@ -218,14 +218,14 @@
 
 (defn- loader
   "Loads data either by running the user-specified function or by reading from file."
-  [project key]
+  [key project]
   (let [x (key project)]
     (if (fn? x)
       ; project file has a loader function
       ((x))
       ; project file has path to a file
       (->> x
-           (attach-to-path (:project-file project))
+           (attach-to-path (:filename project))
            slurp
            edn/read-string))))
 
@@ -246,8 +246,9 @@
                    (for [s src]
                      [s (-> s :link trg-idxd)]))
                  (map vector src))]
-      {:data data
-       :warning (:warning dataset)})))
+      (if-let [warning (:warning dataset)]
+        {:data data, :warning warning}
+        {:data data}))))
  
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - }}} - 
 ; - validator-links - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ - 
@@ -266,7 +267,7 @@
       {:data  acc
        :warning (if (empty? rmvd)
                   nil
-                  (str "Items removed from " msg " data due to missing links: " (string/join ", " rmvd) "."))}
+                  [(str "Missing links. Removed items from " msg " data: " (string/join ", " rmvd) ".")])}
       ; another round
       (let [item (first data)]
         (if (:link item)
@@ -292,8 +293,8 @@
     {:source-data (filter (complement diff-src) src)
      :target-data (filter (complement diff-trg) trg)
      :warning     (cond-> []
-                    (not-empty diff-src) (conj (str "Items removed from source data due to unmatched links: " (string/join ", " diff-src) "."))
-                    (not-empty diff-trg) (conj (str "Items removed from target data due to unmatched links: " (string/join ", " diff-trg) ".")))}))
+                    (not-empty diff-src) (conj (str "Unmatched links. Removed items from source data: " (string/join ", " diff-src) "."))
+                    (not-empty diff-trg) (conj (str "Unmatched links. Removed items from target data: " (string/join ", " diff-trg) ".")))}))
 
 ; -                                                                                            }}} - 
   
@@ -315,13 +316,13 @@
            miss-trg  (filter-missing (:target-data data) "target")
            ; unmatched links
            unmatched (filter-unmatched (:data miss-src) (:data miss-trg))]
-       (cond
-         (not-empty dups-src) {:error (str "Duplicate links in source data: " dups-src)}
-         (not-empty dups-trg) {:error (str "Duplicate links in target data: " dups-trg)}
-         :else (-> unmatched
-                   (update :warning concat (:warning miss-src))
-                   (update :warning concat (:warning miss-trg))
-                   (update :warning string/join "\n\n"))))))
+      (cond
+        (not-empty dups-src) {:error (str "Duplicate links in source data: " dups-src)}
+        (not-empty dups-trg) {:error (str "Duplicate links in target data: " dups-trg)}
+        :else (let [warnings (concat (:warning miss-src) (:warning miss-trg) (:warning unmatched))]
+                (if (empty? warnings)
+                  unmatched
+                  (assoc unmatched :warning (string/join "\n\n" warnings))))))))
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - }}} - 
 ; - validator-specs - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ - 
@@ -375,7 +376,7 @@
               x
               (->> x
                    :sound-changes
-                   (attach-to-path (:project-file x))
+                   (attach-to-path (:filename x))
                    slurp)))]
     (->> x
          to-string
@@ -396,14 +397,14 @@
 ;; <a id="core/load-projectfile"></a>
 
 (defn load-projectfile
-  "Reads, evals, and validates a project file. Returns the hash map returned by the project file + `:project-file` containing the path to the project file."
+  "Reads, evals, and validates a project file. Returns the hash map returned by the project file + `:filename` containing the path to the project file."
   [filename]
   (try
     (->> filename
          (slurp)
          (sci/eval-string)
          (m/assert ProjectFile)
-         (merge {:project-file filename}))
+         (merge {:filename filename}))
     ; probably either sci or malli
     (catch clojure.lang.ExceptionInfo e
       (if (= (-> e ex-data :type) :malli.core/coercion)
@@ -430,13 +431,15 @@
   "Load an entire project based on a project file."
   [filename]    ; a project file
   (let [project (load-projectfile filename)
-        scs     (load-scs project)
+        ; scs     (load-scs project)
         data    (load-data project)]
-    {:filename filename
-     :data (:result data)
-     :has-target-data? (-> data :result first count (= 2))
-     :sound-changes scs
-     :warnings (:warnings data)}))
+    (if (:error data)
+      data
+      {:filename filename
+       :data (:data data)
+       :has-target-data? (-> data :data first count (= 2))
+       ; :sound-changes scs
+       :warning (:warning data)})))
 
 ; --------------------------------------------------------------------------------------------- }}} -
 
