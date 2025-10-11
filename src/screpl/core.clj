@@ -214,30 +214,6 @@
 
 ;; <a id="core/load-data"></a>
 
-; - link-checker - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ - 
-
-(defn- link-checker
-  "Makes sure `:link`s are unique and matching."
-  [data         ; hash-map with `:source-data` and `:target-data`
-   warnings]    ; atom, vector of strings
-  (let [src-links (->> data :source-data (map :link))
-        trg-links (->> data :target-data (map :link))]
-
-    ; check unique
-    (when-let [dups (seq (duplicates src-links))]
-      (throw (ex-info (str "Duplicate links: " dups) {:filename "source data"})))
-    (when-let [dups (seq (duplicates trg-links))]
-      (throw (ex-info (str "Duplicate links: " dups) {:filename "target data"})))
-
-    ; check missing ids
-    (when-let [miss (filter #(-> %1 :link nil?) (:source-data data))]
-      (swap! warnings conj {:message (str "Missing links: " miss)
-                            :filename "source data"}))
-    (when-let [miss (filter #(-> %1 :link nil?) (:target-data data))]
-      (swap! warnings conj {:message (str "Missing links: " miss)
-                            :filename "target data"}))))
-
-; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - }}} - 
 ; - loader  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ - 
 
 (defn- loader
@@ -260,51 +236,131 @@
   "Combines source and target data into pairs:
     {:source-data [s]} -> [[s] [s] …]
     {:source-data [s], :target-data [t]} -> [[s t] [s t] …]"
-  [{:keys [source-data target-data]}]
-  (if target-data
-    (let [target-indexed (index-coll target-data)]
-      (for [s source-data]
-        [s (-> s :link target-indexed)]))
-    (map vector source-data)))
+  [dataset]
+  (if (:error dataset)
+    dataset
+    (let [src  (:source-data dataset)
+          trg  (:target-data dataset)
+          data (if trg
+                 (let [trg-idxd (index-coll trg)]
+                   (for [s src]
+                     [s (-> s :link trg-idxd)]))
+                 (map vector src))]
+      {:data data
+       :warning (:warning dataset)})))
  
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - }}} - 
-; - validator - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ - 
+; - validator-links - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ - 
 
-(defn- validator
-  "Validates data against a spec."
-  [spec idx itm]
-  (try
-    (m/assert spec itm)
-    (catch Exception e
-      (let [data (-> e ex-data :data :explain)]
-        (throw (ex-info (-> data me/humanize str)
-                        {:display (-> data :value :display)
-                         :field (-> data :errors first :in first)
-                         :index (inc idx)
-                         :filename (if (= spec SourceDatum) "source data" "target data")}))))))
+; - filter-missing                                                                             {{{ - 
 
-(defn- validator
-  "Validates data against a spec."
-  [project key spec]
-  (loop [data (key project)
-         acc  []]
+(defn- filter-missing
+  "Finds items without a `:link`. Returns a hash-map with a vector of items that do have a `:link`, and a warning with a list of those that didn't."
+  [dataset msg]
+  (loop [data dataset
+         acc  []
+         rmvd []
+         idx  1]
     (if (empty? data)
-      acc
-      (try
-        (->> data first (m/assert spec))
-        (recur ())))))
+      ; return result
+      {:data  acc
+       :warning (if (empty? rmvd)
+                  nil
+                  (str "Items removed from " msg " data due to missing links: " (string/join ", " rmvd) "."))}
+      ; another round
+      (let [item (first data)]
+        (if (:link item)
+          (recur (rest data)
+                 (conj acc item)
+                 rmvd
+                 (inc idx))
+          (recur (rest data)
+                 acc
+                 (conj rmvd (str idx " (" (:display item) ")"))
+                 (inc idx)))))))
+
+; -                                                                                            }}} - 
+; - filter-unmatched                                                                           {{{ - 
+
+(defn- filter-unmatched
+  "Finds items without a matching `:link` in the corresponding dataset. Returns a hash-map with `:source-data`, `:target-data`, and `:warning` about removed items."
+  [src trg]
+  (let [links-src (->> src (map :link) set)
+        links-trg (->> trg (map :link) set)
+        diff-src  (set/difference links-src links-trg)
+        diff-trg  (set/difference links-trg links-src)] 1
+    {:source-data (filter (complement diff-src) src)
+     :target-data (filter (complement diff-trg) trg)
+     :warning     (cond-> []
+                    (not-empty diff-src) (conj (str "Items removed from source data due to unmatched links: " (string/join ", " diff-src) "."))
+                    (not-empty diff-trg) (conj (str "Items removed from target data due to unmatched links: " (string/join ", " diff-trg) ".")))}))
+
+; -                                                                                            }}} - 
+  
+(defn- validator-links
+  "Makes sure `:link`s are present, unique, and matching. Returns a hash-map with `:source-data`, `:target-data`, and `:warning` about removed items."
+  [data]  ; a hash-map with either `:source-data` and `:target-data`, or `:error`
+  (cond
+    ; a poor man's monad for the threading in `load-data`
+    (:error data) data 
+    ; skip if target data missing
+    (nil? (:target-data data)) data
+    ; do validate
+    :else 
+    (let [; duplicate links
+           dups-src  (duplicates (->> data :source-data (map :link)))
+           dups-trg  (duplicates (->> data :target-data (map :link)))
+           ; missing links
+           miss-src  (filter-missing (:source-data data) "source")
+           miss-trg  (filter-missing (:target-data data) "target")
+           ; unmatched links
+           unmatched (filter-unmatched (:data miss-src) (:data miss-trg))]
+       (cond
+         (not-empty dups-src) {:error (str "Duplicate links in source data: " dups-src)}
+         (not-empty dups-trg) {:error (str "Duplicate links in target data: " dups-trg)}
+         :else (-> unmatched
+                   (update :warning concat (:warning miss-src))
+                   (update :warning concat (:warning miss-trg))
+                   (update :warning string/join "\n\n"))))))
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - }}} - 
+; - validator-specs - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ - 
+
+(defn validator-specs
+  "Validates data against specs. Returns either the same dataset it got, or a hash-map with `:error`."
+  [dataset]
+  (letfn [(helper [spec msg data acc idx]
+            (if (empty? data)
+              acc
+              (let [item   (first data)
+                    result (-> spec (m/explain item) me/humanize)]
+                (if (nil? result)
+                  (recur spec msg (rest data) (conj acc item) (inc idx))
+                  {:error (str "Error in " msg " data"
+                               " in item " idx
+                               (when-let [display (:display item)]
+                                 (str " (" display ")"))
+                               ": " result)}))))]
+    (let [result-src (helper SourceDatum "source" (:source-data dataset) [] 1)
+          result-trg (helper TargetDatum "target" (:target-data dataset) [] 1)]
+      (cond
+        (:error result-src) result-src
+        (:error result-trg) result-trg
+        :else dataset))))
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - }}} - 
 
 (defn load-data
   "Evaluates and validates data. Accepts a project (a map; when called by `core/load-project`) or a string (when called by `gui/get-active-data`)."
   [x]   ; a map or a string
-  (cond-> {}
-    (string? x)      (assoc :source-data (edn/read-string x))       ; x comes from ad-hoc in the gui
-    (map? x)         (assoc :source-data (loader :source-data x))   ; x is a project
-    (:target-data x) (assoc :target-data (loader :target-data x))
-    true             (validator :source-data SourceDatum)))
-      ; {:result (pair-maker data)
+  (let [data (cond-> {}
+               (string? x)      (assoc :source-data (edn/read-string x))       ; x comes from ad-hoc in the gui
+               (map? x)         (assoc :source-data (loader :source-data x))   ; x is a project
+               (:target-data x) (assoc :target-data (loader :target-data x)))] ; maybe add target
+    (-> data
+        validator-specs     ; maybe {:error …}, maybe dataset
+        validator-links     ; maybe {:error …}, maybe dataset, maybe with :warning
+        pair-maker)))       ; maybe {:error …}, maybe {:data …}, maybe with :warning
 
 ; --------------------------------------------------------------------------------------------- }}} -
 ; - load-scs ----------------------------------------------------------------------------------- {{{ -
@@ -575,5 +631,3 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================== }}} =
-
-(load-data "{:source-data \"a\"}")
