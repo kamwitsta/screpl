@@ -259,7 +259,7 @@
                              (swap! *state update-in [:project :sound-changes]
                                     (partial map (fn [i]
                                                    (cond-> i
-                                                     (= (:link i) (:link item))
+                                                     (= (:id i) (:id item))
                                                      (update :active? not))))))}
                {:fx/type :label
                 :disable (-> item :active? not)
@@ -686,7 +686,7 @@
   "Wrapper around `core/load-project`."
   [event
    filename]     ; open dialog if nil
-  ; get the filename, from the event handler, or from a dialog
+  ; get the filename, either from the event handler, or from a dialog
   (let [fname   (if dev-mode
                   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
                   (or filename (chooser-dialog event)))

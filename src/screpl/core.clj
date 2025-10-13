@@ -224,6 +224,7 @@
   (if (:error data)
     data
     (let [type (case key
+                 :sound-changes {:where "sound changes", :display #(-> %1 meta :name), :spec SCItem}
                  :source-data {:where "source data", :display :display, :spec Datum}
                  :target-data {:where "target data", :display :display, :spec Datum})]
       (loop [items data
@@ -364,8 +365,8 @@
   "Evaluates and validates sound change functions. Accepts a project (a map; when called by `core/load-project`) or a string (when called by `gui/get-active-functions`). Returns either a vector of functions, or a hash-map with `:error`."
   [x]
   (-> x
-      (sci-loader :sound-changes)
-      (spec-validator :sound-changes)))
+      (sci-loader :sound-changes)))
+      ; (spec-validator :sound-changes)))
   
 ; -------------------------------------------------------------------------------------------- }}} -
 ; - load-projectfile ------------------------------------------------------------------------- {{{ -
@@ -391,14 +392,14 @@
   "Load an entire project based on a project file."
   [filename]    ; a project file
   (let [project (load-projectfile filename)
-        data    (load-data project)]
-        ; scs     (load-scs project)]
+        data    (load-data project)
+        scs     (load-scs project)]
     (or (:error data)
-        ; (:error scs)
+        (:error scs)
         {:filename filename
          :data (:data data)
          :has-target-data? (-> data :data first count (= 2))
-         ; :sound-changes scs
+         :sound-changes scs
          :warnings (:warnings data)})))
 
 ; -------------------------------------------------------------------------------------------- }}} -
