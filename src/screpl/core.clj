@@ -23,6 +23,110 @@
   (:import  [java.util.concurrent ForkJoinPool]))
 
 
+; = general ================================================================================== {{{ =
+
+;; <a id="core/general"></a>
+;; ## General utility functions
+
+;; - [attach-to-path](#core/attach-to-path)
+;; - [duplicates](#core/duplicates)
+;; - [index-coll](#core/index-coll)
+;; - [make-reporter](#core/make-reporter)
+;; - [map-equal?](#core/map-equal?)
+;; - [pmap-daemon](#core/pmap-daemon)
+
+; - attach-to-path ----------------------------------------------------------------------------- {{{ -
+
+;; <a id="core/attach-to-path"></a>
+
+(defn attach-to-path
+  "Join a path to the parent of another. Example: ../new.clj + /home/me/source.clj => /home/new.clj"
+  [source  ; attach to this path
+   new]    ; attach this path
+  (-> source
+      (java.nio.file.Paths/get (make-array String 0))
+      (.getParent)
+      (.resolve new)
+      (.normalize)
+      (str)))
+
+; ---------------------------------------------------------------------------------------------- }}} -
+; - duplicates --------------------------------------------------------------------------------- {{{ -
+
+;; <a id="core/duplicates"></a>
+
+(defn duplicates
+  "Returns a list of elements that appear at least n times in a collections."
+  
+  ; by default, n=2
+  ([coll] (duplicates coll 2))
+  
+  ; multiplicates, for n>2
+  ([coll n]
+   (for [[x f] (->> coll (remove nil?) frequencies)
+         :when (>= f n)] x)))
+
+; ---------------------------------------------------------------------------------------------- }}} -
+; - index-coll --------------------------------------------------------------------------------- {{{ -
+
+;; <a id="core/index-coll"></a>
+
+(defn index-coll [coll & [key]]
+  "Convert a collection of maps to an indexed collection. If `key` is not given, uses `:link`."
+  (let [key (or key :link)]
+    (persistent! 
+      (reduce (fn [acc item] 
+                (assoc! acc (get item key) item))
+              (transient {})
+              coll))))
+
+; ---------------------------------------------------------------------------------------------- }}} -
+; - make-reporter ------------------------------------------------------------------------------ {{{ -
+
+;; <a id="core/make-reporter"></a>
+
+(defn make-reporter
+  "Generates a function that reports to a channel."
+  [output-ch]   ; each core function receives it independently from the gui
+  (fn [status & [output]]
+    (when output-ch
+      (async/>!! output-ch
+                 {:status status
+                  :output output}))))
+
+; ---------------------------------------------------------------------------------------------- }}} -
+; - map-equal? --------------------------------------------------------------------------------- {{{ -
+
+;; <a id="core/map-equal?"></a>
+
+(defn map-equal?
+  "Checks whether two hash maps have the same values under selected keys. Warning: if both maps are missing all of the keys, `map-equal?` will return `true`."
+  [x   ; compare this map
+   y   ; to this map
+   k]  ; on these keys
+  (= (select-keys x k)
+     (select-keys y k)))
+
+; ---------------------------------------------------------------------------------------------- }}} -
+; - pmap-daemon -------------------------------------------------------------------------------- {{{ -
+
+;; <a id="core/pmap-daemon"></a>
+
+; On daemon vs non-daemon threads, see https://claude.ai/chat/f96046ad-294e-4a6d-a015-50f687a65be9.
+
+(defn pmap-daemon
+  "An alternative to `pmap` which uses daemon threads (managed by JVM)."
+  ;; Standard `pmap` uses non-daemon threads which causes a 60-second delay between when the calculations complete, and when the control is given back to the user. Non-daemon threads make sure the program doesn’t quit before the job has been completed, but this is not a threat in the case of SCRepl, and the delay would be highly impractical.
+  [f coll]
+  (if (empty? coll)
+    []
+    (let [common-pool (ForkJoinPool/commonPool)
+          futures     (mapv #(.submit common-pool ^Callable (fn [] (f %))) coll)]
+      (mapv #(.get %) futures))))
+
+; ---------------------------------------------------------------------------------------------- }}} -
+
+; ============================================================================================== }}} =
 ; = specs ==================================================================================== {{{ =
 
 ;; <a id="core/specs"></a>
