@@ -29,6 +29,7 @@
 ;; ## General utility functions
 
 ;; - [attach-to-path](#core/attach-to-path)
+;; - [context->](#core/context->)
 ;; - [duplicates](#core/duplicates)
 ;; - [index-coll](#core/index-coll)
 ;; - [make-reporter](#core/make-reporter)
@@ -49,6 +50,35 @@
       (.resolve new)
       (.normalize)
       (str)))
+
+; ---------------------------------------------------------------------------------------------- }}} -
+; - context-> ---------------------------------------------------------------------------------- {{{ -
+
+;; <a id="core/context->"></a>
+
+(defmacro context->
+  "Pipes init through forms, while collecting warnings and short-circuiting on errors. Piped functions only receive a value, and must return one of the following: 1) a value; 2) a hash-map with :value and :warnings; 3) a hash-map with :error. The entire pipe also returns one of these three things."
+  [init & forms]
+  (let [pipe     (fn [prv f]
+                   (if (:error prv)
+                     prv
+                     (let [val (if (:value prv) (:value prv) prv)
+                           nxt (f val)]
+                       (if (:error nxt)
+                         nxt
+                         {:value (if (:value nxt) (:value nxt) nxt)
+                          :warnings (concat (:warnings prv) (:warnings nxt))}))))
+        res-expr (reduce
+                   (fn [acc form]
+                     `(~pipe ~acc ~form))
+                   init
+                   forms)
+        res-sym  (gensym "result__")]
+    `(let [~res-sym ~res-expr]
+       (cond
+         (:error ~res-sym)                ~res-sym
+         (not-empty (:warnings ~res-sym)) ~res-sym
+         :else                            (:value ~res-sym)))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - duplicates --------------------------------------------------------------------------------- {{{ -
