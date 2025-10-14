@@ -343,6 +343,7 @@
 (defn- dialog-view
   "A dialog to display errors etc."
   [state]
+  (println (:dialog state))
   (when-let [dialog (:dialog state)]
     (case (:type dialog)
       :error
@@ -352,7 +353,8 @@
        :content-text (:message dialog)
        :header-text ""
        :on-close-request {:event/type ::close-dialog}
-       :showing true}
+       :showing true
+       :width 400}
 
       :progress
       {:fx/type :stage
@@ -383,7 +385,12 @@
       :warning
       {:fx/type :alert
        :alert-type :warning
-       :button-types [:ok]}
+       :button-types [:ok]
+       :content-text (:message dialog)
+       :header-text ""
+       :on-close-request {:event/type ::close-dialog}
+       :showing true
+       :width 400}
 
       (throw (ex-info (str "An error in dialog-view that shouldn't have happened. `state`=" state) {})))))
 
@@ -691,24 +698,28 @@
                   "/home/kamil/devel/clj/screpl/doc/sample-project.clj"
                   (or filename (chooser-dialog event)))
         project (core/load-project fname)]
-    ; change the width of the window to accomodate target data
-    ; both height and width must be given, and
-    ; both must at least simulate change to trigger cljfx's watch on *state
-    (swap! *state assoc-in [:window :width] (* column-width (if (:has-target-data? project) 3.25 2)))
-    (swap! *state update-in [:window :height] (fnil inc 0))
-    ; load data into *state
-    (let [scs (map-indexed
-                (fn [idx itm]
-                  (hash-map :active? true
-                            :id idx
-                            :item itm))
-                (:sound-changes project))
-          new-project (assoc project
-                             :data-filtered (:data project)
-                             :sound-changes scs)]
-      (swap! *state assoc :project new-project)
-      (when-let [warnings (:warnings project)]
-        (message :warning warnings)))))
+    (if (:error project)
+      (message :error-msg (:error project))
+      (do
+        ; maybe display warnings
+        (when (not-empty (:warnings project))
+          (message :warning (string/join "\n\n" (:warnings project))))
+        ; change the width of the window to accomodate target data
+        ; both height and width must be given, and
+        ; both must at least simulate change to trigger cljfx's watch on *state
+        (swap! *state assoc-in [:window :width] (* column-width (if (:has-target-data? project) 3.25 2)))
+        (swap! *state update-in [:window :height] (fnil inc 0))
+        ; load data into *state
+        (let [scs (map-indexed
+                    (fn [idx itm]
+                      (hash-map :active? true
+                                :id idx
+                                :item itm))
+                    (:sound-changes project))
+              new-project (assoc project
+                                 :data-filtered (:data project)
+                                 :sound-changes scs)]
+          (swap! *state assoc :project new-project))))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-leaves ------------------------------------------------------------------------------- {{{ -
@@ -978,26 +989,29 @@
 
 (defn- message
   "Displays a dialog with a message."
-  [type          ; :error, :progress, :warning
-   & messages]   ; an Exception when :error, string(s) or number(s) otherwise
+  [type       ; :error, :error-msg, :progress, :warning
+   message]   ; an Exception when :error, string(s) or number(s) otherwise
   (case type
-    :error    (let [err      (-> messages first Throwable->map)
-                    data     (:data err)
-                    location (cond-> []
-                               (:filename data) (conj (str " in " (:filename data)))
-                               (:index data)    (conj (str " in item " (:index data)))
-                               (:display data)  (conj (str " (" (:display data) ")"))
-                               (:field data)    (conj (str " in " (:field data))))]
-                (swap! *state assoc :dialog
-                       {:type :error
-                        :message (str "Error" (apply str location) ":\n" (:cause err))}))
-    :progress (swap! *state assoc :dialog
-                     {:type :progress
-                      :message "Processing…"
-                      :progress -1})
-    :warning  (swap! *state assoc :dialog
-                     {:type :warning
-                      :message (string/join "\n" (first messages))})))
+    :error     (let [err      (Throwable->map message)
+                     data     (:data err)
+                     location (cond-> []
+                                (:filename data) (conj (str " in " (:filename data)))
+                                (:index data)    (conj (str " in item " (:index data)))
+                                (:display data)  (conj (str " (" (:display data) ")"))
+                                (:field data)    (conj (str " in " (:field data))))]
+                 (swap! *state assoc :dialog
+                        {:type :error
+                         :message (str "Error" (apply str location) ":\n" (:cause err))}))
+    :error-msg (swap! *state assoc :dialog
+                      {:type :error
+                       :message message})
+    :progress  (swap! *state assoc :dialog
+                      {:type :progress
+                       :message "Processing…"
+                       :progress -1})
+    :warning   (swap! *state assoc :dialog
+                      {:type :warning
+                       :message message})))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 
