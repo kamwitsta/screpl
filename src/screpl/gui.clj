@@ -343,7 +343,6 @@
 (defn- dialog-view
   "A dialog to display errors etc."
   [state]
-  (println (:dialog state))
   (when-let [dialog (:dialog state)]
     (case (:type dialog)
       :error
