@@ -1,10 +1,4 @@
-;; A JavaFX user interface.
-
-;; 1. [Global variables](#gui/globals)
-;; 2. [General utility functions](#gui/general)
-;; 3. [Parts of the interface](#gui/views)
-;; 4. [Functionality](#gui/handlers)
-;; 5. [Other](#gui/other)
+; look for TODO (>1 time)
 
 (ns screpl.gui
   (:require [cljfx.api :as fx]
@@ -13,29 +7,26 @@
             [clojure.java.io :as io]
             [clojure.string :as string]
             [screpl.core :as core])
-  (:import [javafx.stage FileChooser FileChooser$ExtensionFilter]
-           [com.mifmif.common.regex Generex]))
+  (:import  [javafx.stage FileChooser FileChooser$ExtensionFilter]
+            [com.mifmif.common.regex Generex]))
 
-; = globals ==================================================================================== {{{ =
-
-;; <a id="gui/globals"></a>
-;; ## Global variables
+; = globals ================================================================================== {{{ =
 
 (declare filter-data message stop-gui surround-string unescape-unicode)
 
-;; Shortcuts and conveniences for development (see `:jvm-opts` in `project.clj`).
+; Shortcuts and conveniences for development (see `:jvm-opts` in `project.clj`).
 (def dev-mode
   (Boolean/parseBoolean
     (System/getProperty "dev.mode" "false")))
 
-;; Used to pass `:cancel` messages to `core` functions.
+; Used to pass `:cancel` messages to `core` functions.
 (def cancel-ch (async/chan))
 
-;; The width of the views in [data-view](#gui/data-view).
-;; Also used to derive window size.
+; The width of the views in [data-view](#gui/data-view).
+; Also used to derive window size.
 (def column-width 200)
 
-;; Update the progress bar after every … steps.
+; Update the progress bar after every … steps.
 (def progress-step 1000)
 
 (def ^:dynamic *state
@@ -72,18 +63,17 @@
 ; ============================================================================================== }}} =
 ; = general ==================================================================================== {{{ =
 
-;; <a id="gui/general"></a>
-;; ## General utility functions
-
 (defn- get-active-data
   "Gets active source data from *state."
   []
   (case (-> @*state :accordion :data)
     "Ad hoc"  (try
-                (-> @*state :ad-hoc :data (surround-string "[" "]") core/load-data first)
+                1
+                ; TODO
+                ; (-> @*state :ad-hoc :data (surround-string "[" "]") core/load-data first)
                 (catch Exception _ nil))
     "Project" (:selection @*state)
-    nil))
+    :else     nil))
 
 
 (defn- get-active-functions
@@ -91,7 +81,9 @@
   []
   (case (-> @*state :accordion :sound-changes)
     "Ad hoc"  (try
-                (-> @*state :ad-hoc :sound-changes core/load-scs)
+                1
+                ; TODO
+                ; (-> @*state :ad-hoc :sound-changes core/load-scs)
                 (catch Exception _ nil))
     "Project" (->> @*state :project :sound-changes (filter :active?) (map :item))
     nil))
@@ -127,21 +119,7 @@
 ; ============================================================================================== }}} =
 ; = views ====================================================================================== {{{ =
 
-;; <a id="gui/views"></a>
-;; ## Parts of the interface
-
-;; Functions that describe the look and behaviour of the GUI.
-
-;; - [data](#gui/data-view)
-;; - [dialog](#gui/dialog-view)
-;; - [menu](#gui/menu-view)
-;; - [output](#gui/output-view)
-;; - [paths](#gui/paths-view)
-;; - [root](#gui/root-view)
-
 ; - data --------------------------------------------------------------------------------------- {{{ -
-
-;; <a id="gui/data-view"></a>
 
 ; - accordion-created  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
 
@@ -338,8 +316,6 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - dialog ------------------------------------------------------------------------------------- {{{ -
 
-;; <a id="gui/dialog-view"></a>
-
 (defn- dialog-view
   "A dialog to display errors etc."
   [state]
@@ -396,8 +372,6 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - menu --------------------------------------------------------------------------------------- {{{ -
 
-;; <a id="gui/menu-view"></a>
-
 (defn- menu-view
   "A menu bar exposing core functions."
   [_]
@@ -445,8 +419,6 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - output ------------------------------------------------------------------------------------- {{{ -
 
-;; <a id="gui/output-view"></a>
-
 (defn- output-view
   "A field displaying the results."
   [state]
@@ -463,8 +435,6 @@
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - paths -------------------------------------------------------------------------------------- {{{ -
-
-;; <a id="gui/paths-view"></a>
 
 (defn- paths-view
   "A window with controls for path finding."
@@ -561,8 +531,6 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - root --------------------------------------------------------------------------------------- {{{ -
 
-;; <a id="gui/root-view"></a>
-
 (defn- root-scene
   "The root scene."
   [state]
@@ -596,23 +564,7 @@
 ; ============================================================================================== }}} =
 ; = handlers =================================================================================== {{{ =
 
-;; <a id="gui/handlers"></a>
-;; ## Functionality
-
-;; Wrappers provide a link between [screpl.core](#screpl.core) functions and the GUI. The [event handler](#gui/event-handler) reacts to user’s actions in the GUI and dispatches work to the appropriate wrappers, while simultaneously catching errors from [screpl.core](#screpl.core), allowing it to focus on the happy path.
-
-;; - [find-irregulars](#gui/find-irregulars)
-;; - [grow-tree](#gui/grow-tree)
-;; - [load-project](#gui/load-project)
-;; - [print-leaves](#gui/print-leaves)
-;; - [print-paths](#gui/print-paths)
-;; - [print-tree](#gui/print-tree)
-;; - [print-tree-paths](#gui/print-tree-paths)
-;; - [event-handler(#gui/event-handler)
-
 ; - find-irregulars ---------------------------------------------------------------------------- {{{ -
-
-;; <a id="gui/find-irregulars"></a>
 
 (defn- find-irregulars
   "Wrapper around `core/grow-tree`, for use by other functions in the gui namespace."
@@ -659,8 +611,6 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - grow-tree ---------------------------------------------------------------------------------- {{{ -
 
-;; <a id="gui/grow-tree"></a>
-
 (defn- grow-tree
   "Convenience wrapper around `core/grow-tree`, for use by other functions in the gui namespace."
   []
@@ -670,8 +620,6 @@
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - load-project ------------------------------------------------------------------------------- {{{ -
-
-;; <a id="gui/load-project"></a>
 
 ; - chooser-dialog - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ -
 
@@ -722,8 +670,6 @@
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-leaves ------------------------------------------------------------------------------- {{{ -
-
-;; <a id="gui/print-leaves"></a>
 
 ; - format-leaves - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
 
@@ -780,8 +726,6 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-paths -------------------------------------------------------------------------------- {{{ -
 
-;; <a id="gui/print-paths"></a>
-
 (defn- print-paths
   "Wrapper around `core/grow-tree` and then `core/find-paths`."
   [_]
@@ -821,8 +765,6 @@
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-tree --------------------------------------------------------------------------------- {{{ -
-
-;; <a id="gui/print-tree"></a>
 
 ; - format-tree-tooltip - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -{{{ -
 
@@ -881,8 +823,6 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - print-tree-paths --------------------------------------------------------------------------- {{{ -
 
-;; <a id="gui/print-tree-paths"></a>
-
 (defn- print-tree-paths
   "Wrapper around `core/grow-tree`, and then `core/find-paths` and `core/print-tree`."
   [_]
@@ -896,8 +836,6 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 
 ; - event-handler ------------------------------------------------------------------------------ {{{ -
-
-;; <a id="gui/event-handler"></a>
 
 (defn- event-handler
   "Reacts to user’s actions in the GUI and dispatches work to other functions. At the same time, catches errors and redirects them to `message`."
@@ -950,20 +888,7 @@
 ; ============================================================================================== }}} =
 ; = other ====================================================================================== {{{ =
 
-;; <a id="gui/other"></a>
-;; ## Other
-
-;; The more technical parts: managing the GUI, and displaying dialogs.
-
-;; - [filter-data](#gui/filter-data)
-;; - [message](#gui/message)
-;; - [renderer](#gui/renderer)
-;; - [start-gui](#gui/start-gui)
-;; - [stop-gui](#gui/stop-gui)
-
 ; - filter-data -------------------------------------------------------------------------------- {{{ -
-
-;; <a id="gui/filter-data"></a>
 
 (defn- filter-data
   "Filters the data displayed in `data-view`."
@@ -983,8 +908,6 @@
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - message ------------------------------------------------------------------------------------ {{{ -
-
-;; <a id="gui/message"></a>
 
 (defn- message
   "Displays a dialog with a message."
@@ -1016,9 +939,6 @@
 
 ; - renderer ----------------------------------------------------------------------------------- {{{ -
 
-;; <a id="gui/renderer"></a>
-
-;; A layer of abstraction that takes care of the changing state. See https://github.com/cljfx/cljfx?tab=readme-ov-file#renderer 
 (def renderer
   (if dev-mode
     (fx/create-renderer
@@ -1035,8 +955,6 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - start-gui ---------------------------------------------------------------------------------- {{{ -
 
-;; <a id="gui/start-gui"></a>
-
 (defn ^:export start-gui
   "Start the GUI"
   []
@@ -1044,8 +962,6 @@
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - stop-gui ----------------------------------------------------------------------------------- {{{ -
-
-;; <a id="gui/stop-gui"></a>
 
 (defn ^:export stop-gui
   "Stop the GUI."

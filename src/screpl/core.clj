@@ -1,48 +1,24 @@
-;; The main library.
-
-;; Functions defined here are made available to the user via [screpl.cli](#screpl.cli).
-
-;; 1. [General utility](#core/general)
-;; 2. [Data specs](#core/specs)
-;; 3. [Data upload](#core/data)
-;; 4. [Single item operations](#core/single)
-;; 5. [Batch operations](#core/batch)
-
-; ^:export's don't really do anything in this case, they're just documentation
-
 (ns screpl.core
   (:gen-class)
   (:require [clojure.core.async :as async]
             [clojure.set :as set]
             [clojure.string :as string]
-            [fast-edn.core :as edn]
             [malli.core :as m]
             [malli.error :as me]
             [malli.generator :as mg]
-            [sci.core :as sci])
+            [sci.core :as sci]
+            [toucan2.core :as db])
   (:import  [java.util.concurrent ForkJoinPool]))
 
 
 ; = general ================================================================================== {{{ =
 
-;; <a id="core/general"></a>
-;; ## General utility functions
-
-;; - [attach-to-path](#core/attach-to-path)
-;; - [duplicates](#core/duplicates)
-;; - [index-coll](#core/index-coll)
-;; - [make-reporter](#core/make-reporter)
-;; - [map-equal?](#core/map-equal?)
-;; - [pmap-daemon](#core/pmap-daemon)
-
 ; - attach-to-path ----------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/attach-to-path"></a>
 
 (defn attach-to-path
   "Join a path to the parent of another. Example: ../new.clj + /home/me/source.clj => /home/new.clj"
-  [source  ; attach to this path
-   new]    ; attach this path
+  [new      ; attach this path
+   source]  ; attach to this path
   (-> source
       (java.nio.file.Paths/get (make-array String 0))
       (.getParent)
@@ -52,8 +28,6 @@
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - duplicates --------------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/duplicates"></a>
 
 (defn duplicates
   "Returns a list of elements that appear at least n times in a collections."
@@ -69,8 +43,6 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - index-coll --------------------------------------------------------------------------------- {{{ -
 
-;; <a id="core/index-coll"></a>
-
 (defn index-coll [coll & [key]]
   "Convert a collection of maps to an indexed collection. If `key` is not given, uses `:link`."
   (let [key (or key :link)]
@@ -82,8 +54,6 @@
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - make-reporter ------------------------------------------------------------------------------ {{{ -
-
-;; <a id="core/make-reporter"></a>
 
 (defn make-reporter
   "Generates a function that reports to a channel."
@@ -97,8 +67,6 @@
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - map-equal? --------------------------------------------------------------------------------- {{{ -
 
-;; <a id="core/map-equal?"></a>
-
 (defn map-equal?
   "Checks whether two hash maps have the same values under selected keys. Warning: if both maps are missing all of the keys, `map-equal?` will return `true`."
   [x   ; compare this map
@@ -109,10 +77,6 @@
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 ; - pmap-daemon -------------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/pmap-daemon"></a>
-
-; On daemon vs non-daemon threads, see https://claude.ai/chat/f96046ad-294e-4a6d-a015-50f687a65be9.
 
 (defn pmap-daemon
   "An alternative to `pmap` which uses daemon threads (managed by JVM)."
@@ -129,19 +93,10 @@
 ; ============================================================================================== }}} =
 ; = specs ==================================================================================== {{{ =
 
-;; <a id="core/specs"></a>
-;; ## Specifications for data provided by the user
-
-;; - [Data: Datum](#core/datum)
-;; - [Sound changes: SCItem, =>SCFun](#core/scfun)
-;; - [Project: ProjectFile, =>GetDataFn](#core/projectfile)
-
 ; - source and target data ------------------------------------------------------------------- {{{ -
 
-;; <a id="core/datum"></a>
-
 (def Datum
-  ;; A single item in the source data.
+  ; A single item in the source data.
   [:map
    [:display string?]
    [:link {:optional true} [:or int? keyword? string?]]])
@@ -149,16 +104,14 @@
 ; -------------------------------------------------------------------------------------------- }}} -
 ; - sound change functions ------------------------------------------------------------------- {{{ -
 
-;; <a id="core/scfun"></a>
-
 (def =>SCFun
-  ;; A single sound change function, deref’ed.
+  ; A single sound change function, deref’ed.
   (m/schema
     [:=> [:cat #'Datum] [:vector #'Datum]]
     {::m/function-checker mg/function-checker}))
 
 (def SCItem
-  ;; A single sound change functions, as loaded from a file (a sci.lang.Var).
+  ; A single sound change functions, as loaded from a file (a sci.lang.Var).
   [:and
    [:fn {:error/message "Not a SCI var. Did you forget to prepend `#'`?"} #(instance? sci.lang.Var %)]
    [:fn {:error/message "Function must conform to =>SCFun schema."} #(m/validate =>SCFun (deref %))]])
@@ -166,59 +119,37 @@
 ; -----------------------------==------------------------------------------------------------- }}} -
 ; - project file ----------------------------------------------------------------------------- {{{ -
 
-;; <a id="core/projectfile"></a>
-
-(def =>GetDataFn
-  ; A function that retrieves data from a database and converts them to regular Clojure hash maps. Takes no arguments and returns data as a vector.
-  (m/schema
-    [:=>
-     :cat
-     [:vector #'Datum]]
-    {::m/function-checker mg/function-checker}))
-
 (def ProjectFile
-  ;; Spec for the file containing pointers to the components of a project.
+  ; Spec for the file containing pointers to the components of a project.
   [:map
    [:sound-changes string?]
-   [:source-data [:or string? #'=>GetDataFn]]
-   [:target-data {:optional true} [:or string? #'=>GetDataFn]]])
+   [:source-data [:or string? [:vector #'Datum]]]
+   [:target-data {:optional true} [:or string? [:vector #'Datum]]]])
 
 ; -------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================ }}} =
 ; = data upload ============================================================================== {{{ =
 
-;; <a id="core/data"></a>
-;; ## Loading users’ code and data
-
-;; The only function that is directly exposed via the UI is [load-project](#core/load-project), which calls all the other functions. The reason for this is this: 1) the `:link` key is only required from source data when target data are also present, and can be omitted otherwise; 2) the `:link`’s in source data must match the `:link`’s in target data. Validating the former and ensuring the latter can only be done when all the data are loaded together in one go.
-;; Indirectly, the UI also calls [load-data](#core/load-data) and [load-scs](#core/load-scs).
-
-;; - [load-project](#core/load-project)
-;; - [load-projectfile](#core/load-projectfile)
-;; - [load-data](#core/load-data)
-;; - [load-scs](#core/load-scs)
-
 ; - sci-loader ------------------------------------------------------------------------------- {{{ - 
 
 (defn- sci-loader
-  "Evaluates data. `x` can either be a string containing data or functions (when from GUI's ad-hoc's), or a project hash-map (when from `core/load-project`)."
-  [x key]
-  (try
-    (let [data (if (string? x)
-                 x
-                 (->> x
-                      key
-                      (attach-to-path (:filename x))
-                      (slurp)))]
-       (sci/eval-string data))
-    (catch Throwable e
-      {:error (str "Error in "
-                   (case key
-                     :sound-changes "sound changes"
-                     :source-data "source data"
-                     :target-data "target data")
-                   ": " (ex-message e))})))
+  "Evaluates a string in SCI. Returns either the result of the evaluation or a hash-map with `:error`."
+
+  ([string key]
+   (sci-loader string key nil))
+
+  ([string key opts]
+   (try
+     (sci/eval-string string opts)
+     (catch Throwable e
+       {:error (str "Error in "
+                    (case key
+                      :project-file "project file"
+                      :sound-changes "sound changes"
+                      :source-data "source data"
+                      :target-data "target data")
+                    ": " (ex-message e))}))))
 
 ; -------------------------------------------------------------------------------------------- }}} - 
 ; - spec-validator --------------------------------------------------------------------------- {{{ - 
@@ -237,19 +168,16 @@
         (if (empty? items)
           data
           (let [item   (first items)
-                issues (-> type :spec (m/explain item) (me/humanize))]
+                issues (m/explain (:spec type) item)]
             (if (nil? issues)
               (recur (rest items) (inc idx))
               {:error (str "Error in " (:where type)
                          " in item " idx
                          " (" ((:display type) item) ")"
-                         ": " issues)})))))))
+                         ": " (me/humanize issues))})))))))
 
 ; -------------------------------------------------------------------------------------------- }}} - 
-
-; - load-data -------------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/load-data"></a>
+; - combine-data ----------------------------------------------------------------------------- {{{ -
 
 ; - pair-maker - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - {{{ - 
 
@@ -348,82 +276,71 @@
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -}}} - 
 
-(defn load-data
-  "Evaluates and validates data. Accepts a project (a map; when called by `core/load-project`) or a string (when called by `gui/get-active-data`). Returns either a hash-map with `:data` and possibly `:warnings`, or a hash-map with `:error`."
-  [x]   ; a map or a string
-  (if (:error x)
-    x
-    (let [data     (cond-> {:source-data (sci-loader x :source-data)}
-                     (:target-data x) (assoc :target-data (sci-loader x :target-data)))
-          vald-src (spec-validator (:source-data data) :source-data)
-          vald-trg (spec-validator (:target-data data) :target-data)
-          valdd    (link-validator vald-src vald-trg)
-          paired   (pair-maker valdd)]
-      paired)))
+(defn- combine-data
+  "Takes source and target data, validates the `:link`s, and combines them into a vector of pairs."
+  [source target]
+  (let [validated (link-validator source target)
+        paired    (pair-maker validated)]
+    paired))
 
 ; -------------------------------------------------------------------------------------------- }}} -
-; - load-scs --------------------------------------------------------------------------------- {{{ -
+; - load-component --------------------------------------------------------------------------- {{{ -
 
-;; <a id="core/load-scs"></a>
+(defn- load-component
+  "Loads and validates a single component from a project."
+  [project key]
+  (let [unpacked  (key project)
+        loaded    (cond
+                    (nil? unpacked)  nil          ; target data might be missing
+                    (coll? unpacked) unpacked     ; data might be pre-loaded by the project file
+                    :else (-> unpacked
+                              (attach-to-path (:filename project))
+                              (slurp)
+                              (sci-loader key)))
+        validated (spec-validator loaded key)]
+    validated))
 
-(defn load-scs
-  "Evaluates and validates sound change functions. Accepts a project (a map; when called by `core/load-project`) or a string (when called by `gui/get-active-functions`). Returns either a vector of functions, or a hash-map with `:error`."
-  [x]
-  (-> x
-     (sci-loader :sound-changes)
-     (spec-validator :sound-changes)))
-  
 ; -------------------------------------------------------------------------------------------- }}} -
 ; - load-projectfile ------------------------------------------------------------------------- {{{ -
 
-;; <a id="core/load-projectfile"></a>
-
-(defn load-projectfile
-  "Reads, evals, and validates a project file. Returns the hash map returned by the project file + `:filename` containing the path to the project file."
+(defn- load-projectfile
+  "Reads, evals, and validates a project file. Returns either the resulting hash map + `:filename` containing the path to the project file, or a hash map with `:error`."
   [filename]
-  (let [project (->> filename slurp edn/read-string)
-        issues  (m/explain ProjectFile project)]
-    (if (nil? issues)
-      (assoc project :filename filename)
-      {:error (str "Error in project file: " (me/humanize issues))})))
+  (let [sci-opts {:namespaces {'toucan2.core (sci/copy-ns toucan2.core (sci/create-ns 'toucan2.core))}}
+        loaded   (-> filename slurp (sci-loader :project-file sci-opts))
+        issues   (m/explain ProjectFile loaded)]
+    (if (some? issues)
+      {:error (str "Error in project file: " (me/humanize issues))}
+      (assoc loaded :filename filename))))
 
 ; -------------------------------------------------------------------------------------------- }}} -
 
 ; - load-project ----------------------------------------------------------------------------- {{{ -
 
-;; <a id="core/load-project"></a>
-
 (defn ^:export load-project
   "Load an entire project based on a project file."
   [filename]    ; a project file
   (let [project (load-projectfile filename)
-        data    (load-data project)
-        scs     (load-scs project)]
+        scs     (load-component project :sound-changes)
+        source  (load-component project :source-data)
+        target  (load-component project :target-data)
+        data    (combine-data source target)]
     (cond
-      (:error data) data
-      (:error scs) scs
-      :else {:filename filename
-             :data (:data data)
-             :has-target-data? (-> data :data first count (= 2))
-             :sound-changes scs
-             :warnings (:warnings data)})))
+      (:error data)    data
+      (:error project) project
+      (:error scs)     scs
+      :else            {:filename filename
+                        :sound-changes scs
+                        :data data
+                        :has-target-data? (-> data :data first count (= 2))
+                        :warnings (:warnings data)})))
 
 ; -------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================ }}} =
 ; = single =================================================================================== {{{ =
 
-;; <a id="core/single"></a>
-;; ## Operations on individual items
-
-;; - [grow-tree](#core/grow-tree)
-;; - [find-paths](#core/find-paths)
-;; - [print-leaves](#core/print-leaves)
-;; - [print-tree](#core/print-tree)
-
 ; - grow-tree -------------------------------------------------------------------------------- {{{ -
-
-;; <a id="cor/grow-tree"></a>
 
 (defn ^:export grow-tree
   "Pipelines a value through a series of functions while keeping the intermediate results, in effect growing a tree. Functions that do not change the previous value are skipped. Returns a lazy sequence of hash-map with the keys `:id`, `:label`, `:value`, `:fname` and `:children` where `:value` is the given node, `:fname` is the name of the function that produces `:children` from it, and `:label` is a convenience copy of `-> :value :display`."
@@ -451,8 +368,6 @@
       
 ; -------------------------------------------------------------------------------------------- }}} -
 ; - find-paths ------------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/find-paths"></a>
 
 (defn ^:export find-paths
   "Finds paths in a tree, from the root to leaves matching a regex. Outputs results to a channel, and returns a set of nodes."
@@ -493,9 +408,7 @@
 ; -------------------------------------------------------------------------------------------- }}} -
 ; - print-leaves ----------------------------------------------------------------------------- {{{ -
 
-;; <a id="core/print-leaves"></a>
-
-;; Not exactly a tree operation. Trees are stored as lazy sequences, so in order to collect the leaves, they have to be first realized. Simply pipelining a value requires the application of all the same sound changes, and saves the overhead of storing the intermediate values.
+; Not exactly a tree operation. Trees are stored as lazy sequences, so in order to collect the leaves, they have to be first realized. Simply pipelining a value requires the application of all the same sound changes, and saves the overhead of storing the intermediate values.
 (defn print-leaves
   "Print the products of pipelining a value through a series of functions."
   [functions  ; the pipeline
@@ -513,8 +426,6 @@
 
 ; -------------------------------------------------------------------------------------------- }}} -
 ; - print-tree ------------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/print-tree"></a>
 
 (defn print-tree
   "Converts a tree to HTML, putting partial results on a channel. Returns the count of leaves and nodes."
@@ -568,14 +479,7 @@
 ; ============================================================================================ }}} =
 ; = batch ==================================================================================== {{{ =
 
-;; <a id="core/batch"></a>
-;; ## Operations on multiple items
-
-;; - [find-irregulars](#core/find-irregulars)
-
 ; - find-irregulars -------------------------------------------------------------------------- {{{ -
-
-;; <a id="core/find-irregulars"></a>
 
 (defn ^:export find-irregulars
   "Batch pipelines values through a list of functions, and reports those items that do not produce the expected result. `data` is a vector of vectors, each containing a source map and a target map."
@@ -601,3 +505,6 @@
 ; -------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================ }}} =
+
+(println
+  (load-project "/home/kamil/devel/clj/screpl/doc/sample-project.clj"))

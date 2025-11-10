@@ -6,7 +6,6 @@
   :dependencies [[org.clojure/clojure "1.12.0"]
                  ; data upload
                  [io.github.camsaul/toucan2 "1.0.565"] 
-                 [io.github.tonsky/fast-edn "1.1.2"]
                  [metosin/malli "0.17.0"]
                  [org.babashka/sci "0.9.45"]
                  [org.mariadb.jdbc/mariadb-java-client "3.5.3"]
@@ -28,13 +27,9 @@
                                   [com.clojure-goes-fast/clj-memory-meter "0.4.0"]]
                    :jvm-opts ["-Ddev.mode=true"
                               "-Djdk.attach.allowAttachSelf"
-                              "-Djava.awt.headless=false"]
-                   :plugins  [[lein-marginalia "0.9.2"]]}
+                              "-Djava.awt.headless=false"]}
              :uberjar {:aot :all
                        :jvm-opts ["-Ddev.mode=false"
                                   "-Dclojure.compiler.direct-linking=true"]
                        :injections [(javafx.application.Platform/exit)]
                        :uberjar-name "screpl.jar"}})
-
-; generate documentation with Marginalia:
-; lein marg -d ./doc -f 3-documentation.html -L -X src/screpl/
