@@ -1,5 +1,3 @@
-; look for TODO (>1 time)
-
 (ns screpl.gui
   (:require [cljfx.api :as fx]
             [clojure.core.async :as async]
@@ -67,24 +65,20 @@
   "Gets active source data from *state."
   []
   (case (-> @*state :accordion :data)
-    "Ad hoc"  (try
-                1
-                ; TODO
-                ; (-> @*state :ad-hoc :data (surround-string "[" "]") core/load-data first)
-                (catch Exception _ nil))
+    "Ad hoc"  (core/load-component
+                {:source-data (-> @*state :ad-hoc :data (surround-string "[" "]"))}
+                :source-data)
     "Project" (:selection @*state)
-    :else     nil))
+    nil))
 
 
 (defn- get-active-functions
   "Gets active sound change functions from *state."
   []
   (case (-> @*state :accordion :sound-changes)
-    "Ad hoc"  (try
-                1
-                ; TODO
-                ; (-> @*state :ad-hoc :sound-changes core/load-scs)
-                (catch Exception _ nil))
+    "Ad hoc"  (core/load-component
+                {:sound-changes (-> @*state :ad-hoc :sound-changes (surround-string "[" "]"))}
+                :sound-changes)
     "Project" (->> @*state :project :sound-changes (filter :active?) (map :item))
     nil))
 
@@ -269,7 +263,7 @@
                               :text "Ad hoc"
                               :content {:fx/type :text-area
                                         :prompt-text "Write sound change function/s here…"
-                                        ; there is a :text prop but it i don't seem to be able to bind it to state, so :on-text-changed instead
+                                        ; there is a :text prop but i don't seem to be able to bind it to state, so :on-text-changed instead
                                         :on-text-changed {:event/type ::ad-hoc-sc-key-pressed}}
                               :on-mouse-clicked (partial pane-click-handler :sound-changes)}]}}
              ; data
@@ -309,7 +303,7 @@
                               :text "Ad hoc"
                               :content {:fx/type :text-area
                                         :prompt-text "Write a source datum here…"
-                                        ; there is a :text prop but it i don't seem to be able to bind it to state, so :on-text-changed instead
+                                        ; there is a :text prop but i don't seem to be able to bind it to state, so :on-text-changed instead
                                         :on-text-changed {:event/type ::ad-hoc-data-key-pressed}}
                               :on-mouse-clicked (partial pane-click-handler :data)}]}}]}))
 
@@ -911,29 +905,33 @@
 
 (defn- message
   "Displays a dialog with a message."
-  [type       ; :error, :error-msg, :progress, :warning
-   message]   ; an Exception when :error, string(s) or number(s) otherwise
-  (case type
-    :error     (let [err      (Throwable->map message)
-                     data     (:data err)
-                     location (cond-> []
-                                (:filename data) (conj (str " in " (:filename data)))
-                                (:index data)    (conj (str " in item " (:index data)))
-                                (:display data)  (conj (str " (" (:display data) ")"))
-                                (:field data)    (conj (str " in " (:field data))))]
-                 (swap! *state assoc :dialog
-                        {:type :error
-                         :message (str "Error" (apply str location) ":\n" (:cause err))}))
-    :error-msg (swap! *state assoc :dialog
-                      {:type :error
-                       :message message})
-    :progress  (swap! *state assoc :dialog
-                      {:type :progress
-                       :message "Processing…"
-                       :progress -1})
-    :warning   (swap! *state assoc :dialog
-                      {:type :warning
-                       :message message})))
+
+  ([type]
+   (message type nil))
+
+  ([type       ; :error, :error-msg, :progress, :warning
+    message]   ; an Exception when :error, string(s) or number(s) otherwise
+   (case type
+     :error     (let [err      (Throwable->map message)
+                      data     (:data err)
+                      location (cond-> []
+                                 (:filename data) (conj (str " in " (:filename data)))
+                                 (:index data)    (conj (str " in item " (:index data)))
+                                 (:display data)  (conj (str " (" (:display data) ")"))
+                                 (:field data)    (conj (str " in " (:field data))))]
+                  (swap! *state assoc :dialog
+                         {:type :error
+                          :message (str "Error" (apply str location) ":\n" (:cause err))}))
+     :error-msg (swap! *state assoc :dialog
+                       {:type :error
+                        :message message})
+     :progress  (swap! *state assoc :dialog
+                       {:type :progress
+                        :message "Processing…"
+                        :progress -1})
+     :warning   (swap! *state assoc :dialog
+                       {:type :warning
+                        :message message}))))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
 

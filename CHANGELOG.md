@@ -1,5 +1,9 @@
 # Change Log
 ------------
+## [0.4.2] – 2025-
+### Changed
+- refactored data loading
+
 
 ## [0.4.1] – 2025-09-07
 ----------

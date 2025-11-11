@@ -284,23 +284,6 @@
     paired))
 
 ; -------------------------------------------------------------------------------------------- }}} -
-; - load-component --------------------------------------------------------------------------- {{{ -
-
-(defn- load-component
-  "Loads and validates a single component from a project."
-  [project key]
-  (let [unpacked  (key project)
-        loaded    (cond
-                    (nil? unpacked)  nil          ; target data might be missing
-                    (coll? unpacked) unpacked     ; data might be pre-loaded by the project file
-                    :else (-> unpacked
-                              (attach-to-path (:filename project))
-                              (slurp)
-                              (sci-loader key)))
-        validated (spec-validator loaded key)]
-    validated))
-
-; -------------------------------------------------------------------------------------------- }}} -
 ; - load-projectfile ------------------------------------------------------------------------- {{{ -
 
 (defn- load-projectfile
@@ -315,6 +298,36 @@
 
 ; -------------------------------------------------------------------------------------------- }}} -
 
+; - load-component --------------------------------------------------------------------------- {{{ -
+
+(defn ^:export load-component
+  "Loads and validates a single component from a project."
+  [project key]
+  (let [unpacked  (key project)
+        loaded    (cond
+
+                    ; assuming called for target data which are missing
+                    (nil? unpacked) 
+                    nil          
+
+                    ; assuming pre-loaded by the project file
+                    (coll? unpacked)
+                    unpacked     
+
+                    ; assuming called by the gui for ad-hoc
+                    (nil? (:filename project))
+                    (sci-loader unpacked key)
+
+                    ; assuming given a path to a file
+                    :else
+                    (-> unpacked
+                        (attach-to-path (:filename project))
+                        (slurp)
+                        (sci-loader key)))
+        validated (spec-validator loaded key)]
+    validated))
+
+; -------------------------------------------------------------------------------------------- }}} -
 ; - load-project ----------------------------------------------------------------------------- {{{ -
 
 (defn ^:export load-project
@@ -331,7 +344,7 @@
       (:error scs)     scs
       :else            {:filename filename
                         :sound-changes scs
-                        :data data
+                        :data (:data data)
                         :has-target-data? (-> data :data first count (= 2))
                         :warnings (:warnings data)})))
 
@@ -346,6 +359,7 @@
   "Pipelines a value through a series of functions while keeping the intermediate results, in effect growing a tree. Functions that do not change the previous value are skipped. Returns a lazy sequence of hash-map with the keys `:id`, `:label`, `:value`, `:fname` and `:children` where `:value` is the given node, `:fname` is the name of the function that produces `:children` from it, and `:label` is a convenience copy of `-> :value :display`."
   [functions     ; the pipeline
    value]        ; the value to be pipelined
+  (println functions value)
   (let [id-counter (atom -1)]
    (letfn [(grow-tree-hlp [fns x]
              (swap! id-counter inc)
@@ -355,10 +369,10 @@
                  (if (= [x] x')                     ; see if applying f makes a difference
                    (grow-tree-hlp (next fns) x)     ; skip it if it doesn't
                    (hash-map :id @id-counter
-                            :label (:display x)
-                            :value x
-                            :fname (-> f meta :name)
-                            :children (map (partial grow-tree-hlp (next fns)) x'))))
+                             :label (:display x)
+                             :value x
+                             :fname (-> f meta :name)
+                             :children (map (partial grow-tree-hlp (next fns)) x'))))
                ; leaf
                {:id @id-counter
                 :label (:display x)
@@ -441,9 +455,9 @@
                 (do
                   ; print the node (1/2)
                   (report! :partial (cond-> "<li"
-                                     class         (str " class=\"" class "\"")
-                                     true          (str ">"(:label node))
-                                     (:fname node) (str " <span class=\"fname\">" (:fname node) "</span>")))
+                                      class         (str " class=\"" class "\"")
+                                      true          (str ">"(:label node))
+                                      (:fname node) (str " <span class=\"fname\">" (:fname node) "</span>")))
                   ; go through the children
                   (if (seq (:children node))
                     ; if node
@@ -505,6 +519,3 @@
 ; -------------------------------------------------------------------------------------------- }}} -
 
 ; ============================================================================================ }}} =
-
-(println
-  (load-project "/home/kamil/devel/clj/screpl/doc/sample-project.clj"))
