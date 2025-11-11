@@ -33,8 +33,8 @@
         :accordion {:data nil
                     :sound-changes nil}
         ; ad hoc tabs
-        :ad-hoc {:data ""
-                 :sound-changes ""}
+        :ad-hoc {:data {:error "", :field ""}
+                 :sound-changes {:error "", :field ""}}
         ; dialog window for errors and progress reporting
         :dialog nil
         ; filtering data in `data-view`
@@ -65,9 +65,12 @@
   "Gets active source data from *state."
   []
   (case (-> @*state :accordion :data)
-    "Ad hoc"  (core/load-component
-                {:source-data (-> @*state :ad-hoc :data (surround-string "[" "]"))}
-                :source-data)
+    "Ad hoc"  (let [loaded (core/load-component
+                             {:source-data (-> @*state :ad-hoc :data :field (surround-string "[" "]"))}
+                             :source-data)
+                    error  (:error loaded)]
+                (swap! *state assoc-in [:ad-hoc :data :error] error)
+                (if error nil loaded))
     "Project" (:selection @*state)
     nil))
 
@@ -76,9 +79,12 @@
   "Gets active sound change functions from *state."
   []
   (case (-> @*state :accordion :sound-changes)
-    "Ad hoc"  (core/load-component
-                {:sound-changes (-> @*state :ad-hoc :sound-changes (surround-string "[" "]"))}
-                :sound-changes)
+    "Ad hoc"  (let [loaded (core/load-component
+                             {:sound-changes (-> @*state :ad-hoc :sound-changes :field (surround-string "[" "]"))}
+                             :sound-changes)
+                    error  (:error loaded)]
+                (swap! *state assoc-in [:ad-hoc :sound-changes :error] error)
+                (if error nil loaded))
     "Project" (->> @*state :project :sound-changes (filter :active?) (map :item))
     nil))
 
@@ -261,10 +267,17 @@
                               :on-mouse-clicked (partial pane-click-handler :sound-changes)}
                              {:fx/type :titled-pane
                               :text "Ad hoc"
-                              :content {:fx/type :text-area
-                                        :prompt-text "Write sound change function/s here…"
-                                        ; there is a :text prop but i don't seem to be able to bind it to state, so :on-text-changed instead
-                                        :on-text-changed {:event/type ::ad-hoc-sc-key-pressed}}
+                              :content {:fx/type :v-box
+                                        :padding 0
+                                        :children [{:fx/type :text-area
+                                                    :prompt-text "Write sound change function/s here…"
+                                                    ; there is a :text prop but i don't seem to be able to bind it to state, so :on-text-changed instead
+                                                    :on-text-changed {:event/type ::ad-hoc-sc-key-pressed}
+                                                    :v-box/vgrow :always}
+                                                   {:fx/type :label
+                                                    :alignment :top-right
+                                                    :pref-height 20
+                                                    :text (-> state :ad-hoc :sound-changes :error)}]}
                               :on-mouse-clicked (partial pane-click-handler :sound-changes)}]}}
              ; data
              {:fx/type fx/ext-on-instance-lifecycle   ; provides :on-created
@@ -301,10 +314,17 @@
                                                     :selection-mode :single}]}}
                              {:fx/type :titled-pane
                               :text "Ad hoc"
-                              :content {:fx/type :text-area
-                                        :prompt-text "Write a source datum here…"
-                                        ; there is a :text prop but i don't seem to be able to bind it to state, so :on-text-changed instead
-                                        :on-text-changed {:event/type ::ad-hoc-data-key-pressed}}
+                              :content {:fx/type :v-box
+                                        :padding 0
+                                        :children [{:fx/type :text-area
+                                                    :prompt-text "Write a source datum here…"
+                                                    ; there is a :text prop but i don't seem to be able to bind it to state, so :on-text-changed instead
+                                                    :on-text-changed {:event/type ::ad-hoc-data-key-pressed}
+                                                    :v-box/vgrow :always}
+                                                   {:fx/type :label
+                                                    :alignment :top-right
+                                                    :pref-height 20
+                                                    :text (-> state :ad-hoc :data :error)}]}
                               :on-mouse-clicked (partial pane-click-handler :data)}]}}]}))
 
 ; ---------------------------------------------------------------------------------------------- }}} -
@@ -847,8 +867,8 @@
       ::reload-project (load-project event (-> @*state :project :filename))
 
       ; ad-hoc
-      ::ad-hoc-data-key-pressed (swap! *state assoc-in [:ad-hoc :data] (:fx/event event))
-      ::ad-hoc-sc-key-pressed (swap! *state assoc-in [:ad-hoc :sound-changes] (:fx/event event))
+      ::ad-hoc-data-key-pressed (swap! *state assoc-in [:ad-hoc :data :field] (:fx/event event))
+      ::ad-hoc-sc-key-pressed (swap! *state assoc-in [:ad-hoc :sound-changes :field] (:fx/event event))
 
       ; filtering
       ::change-filter-pattern (swap! *state assoc :filter-pattern (:fx/event event))
