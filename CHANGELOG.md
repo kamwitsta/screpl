@@ -1,7 +1,10 @@
 # Change Log
 ------------
-## [0.4.2] – 2025-
+
+## [0.4.2] – 2025-11-16
+----------
 ### Changed
+- fixed error reporting in ad-hoc
 - refactored data loading
 
 

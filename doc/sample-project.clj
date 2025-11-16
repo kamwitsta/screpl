@@ -11,7 +11,7 @@
 
 (defn- fetch-data [which]
   (let [data (db/select :conn db-config "words" :language (case which :source "Latin" :target "Romanian"))
-        categories #{"NomSg" "VocSg" "AccSg" "GenSg" "DatSg" "AblSg" "NomPl" "VocPl" "AccPl" "GenPl" "DatPl" "AblPl"}
+        categories #{"NomSg" "VocSg" "AccSg" "GenSg" "DatSg" "NomPl" "VocPl" "AccPl" "GenPl" "DatPl"}
         filter-category #(contains? categories (:category %))
         map-link #(assoc % :link (str (:entry_id %) "-" (:category %)))
         map-into #(into {} %)]

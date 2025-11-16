@@ -359,7 +359,6 @@
   "Pipelines a value through a series of functions while keeping the intermediate results, in effect growing a tree. Functions that do not change the previous value are skipped. Returns a lazy sequence of hash-map with the keys `:id`, `:label`, `:value`, `:fname` and `:children` where `:value` is the given node, `:fname` is the name of the function that produces `:children` from it, and `:label` is a convenience copy of `-> :value :display`."
   [functions     ; the pipeline
    value]        ; the value to be pipelined
-  (println functions value)
   (let [id-counter (atom -1)]
    (letfn [(grow-tree-hlp [fns x]
              (swap! id-counter inc)
